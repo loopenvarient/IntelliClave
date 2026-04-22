@@ -1,16 +1,22 @@
+```gitignore
+# ── Data & Datasets ──────────────────────────────────────────
 *.csv
 data/raw/
 data/processed/
 *.pcap
 *.pcapng
+
+# ── ML Models & Checkpoints ──────────────────────────────────
 *.pt
 *.pth
 *.pkl
 *.h5
 *.onnx
+*.model
 checkpoints/
 sealed_storage/
-*.model
+
+# ── Python ───────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
@@ -18,32 +24,50 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# ── Virtual Environments ─────────────────────────────────────
 venv/
 env/
 .env
 .venv
+
+# ── Node / Frontend ──────────────────────────────────────────
 node_modules/
 .npm
 package-lock.json
+
+# ── Logs & Output ────────────────────────────────────────────
 *.log
 logs/
 *.out
+
+# ── Generated Results ────────────────────────────────────────
 status.json
 attestation.json
 results.json
+results/benchmarks_enclave.json
+results/overhead_ratios.json
 benchmarks_enclave.json
 overhead_ratios.json
+
+# ── OS & Editor ──────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# ── Archives ─────────────────────────────────────────────────
 *.tar
+
+# ── Gramine / TEE ────────────────────────────────────────────
 *.token
 *.sig
 *.manifest
 *.manifest.sgx
 gramine_tmp/
+
+# ── Cryptographic Material ───────────────────────────────────
 *.pem
 *.key
 *.p12
@@ -51,7 +75,8 @@ gramine_tmp/
 *.srl
 !crypto/certs/ca.crt
 !crypto/certs/server.crt
-results/benchmarks_enclave.json
-results/overhead_ratios.json
+
+# ── Jupyter ──────────────────────────────────────────────────
 .ipynb_checkpoints/
 *.ipynb
+```
