@@ -1,15 +1,23 @@
+# Python 3.10.x recommended (compatible with torch 2.1.0, flwr 1.6.0, opacus 1.4.0)
 torch==2.1.0
 torchvision==0.16.0
 numpy==1.24.3
 pandas==2.0.3
 scikit-learn==1.3.2
 scipy==1.11.4
+# flwr 1.6.0 requires grpcio>=1.48.2,<2.0.0 and protobuf>=3.19.0,<4.0.0
 flwr==1.6.0
+grpcio==1.59.3
+protobuf==3.20.3
+# opacus 1.4.0 requires opt-einsum>=3.3.0
 opacus==1.4.0
+opt-einsum==3.3.0
+# pyOpenSSL 23.3.0 requires cryptography>=41.0.5,<42; flwr 1.6.0 requires cryptography>=41.0.2,<42
 cryptography==41.0.7
 pyOpenSSL==23.3.0
 fastapi==0.104.1
-uvicorn==0.24.0
+# flwr 1.6.0 REST extra requires uvicorn[standard]>=0.23.0,<0.24.0; downgraded from 0.24.0
+uvicorn==0.23.2
 python-multipart==0.0.6
 httpx==0.25.2
 matplotlib==3.8.2

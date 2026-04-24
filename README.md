@@ -6,7 +6,7 @@
 
 ## What Is This
 
-IntelliClave is a privacy-preserving network intrusion detection system.
+IntelliClave is a privacy-preserving AI pipeline using Confidential Computing
 Multiple organisations train a shared AI model collaboratively
 without any organisation's data ever leaving their premises.
 
@@ -40,7 +40,6 @@ Three layers make this possible:
 
 | Layer | Technology | Version |
 |-------|------------|---------|
-| Dataset | CICIDS 2017 | 2017 |
 | ML Model | PyTorch | 2.1.0 |
 | Federated Learning | Flower (flwr) | 1.6.0 |
 | Differential Privacy | Opacus | 1.4.0 |
@@ -92,15 +91,9 @@ cd dashboard/frontend/intelliclave-ui && npm start
 
 ---
 
-## Dataset
+<!-- ## Dataset
 
-Uses **CICIDS 2017** (Canadian Institute for Cybersecurity).
-
-Download from: https://www.unb.ca/cic/datasets/ids-2017.html
-
-Place CSV files in `data/raw/` — this folder is excluded from Git.
-
----
+--- -->
 
 ## Interface Contracts
 
