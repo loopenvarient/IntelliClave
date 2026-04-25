@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fl-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fl-server
+  template:
+    metadata:
+      labels:
+        app: fl-server
+    spec:
+      containers:
+      - name: fl-server
+        image: fl-server-image:latest
+        ports:
+        - containerPort: 8000
+        volumeMounts:
+        - name: server-storage
+          mountPath: /app/data
+      volumes:
+      - name: server-storage
+        persistentVolumeClaim:
+          claimName: fl-server-pvc
