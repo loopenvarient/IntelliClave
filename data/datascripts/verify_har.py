@@ -1,8 +1,7 @@
 import numpy as np
 import os
 
-base = r'C:\Users\user\Documents\GitHub\IntelliClave\UCI HAR Dataset'
-
+base = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'UCI HAR Dataset')
 files = {
     'train/X_train.txt':       (7352, 561),
     'train/y_train.txt':       (7352,),
