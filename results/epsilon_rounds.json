@@ -1,0 +1,42 @@
+[
+  {
+    "fl_round": 1,
+    "epsilon_consumed": 4.7837,
+    "budget_remaining": 5.2163,
+    "budget_exhausted": false,
+    "train_accuracy": 0.6184,
+    "test_accuracy": 0.6006
+  },
+  {
+    "fl_round": 2,
+    "epsilon_consumed": 6.406,
+    "budget_remaining": 3.594,
+    "budget_exhausted": false,
+    "train_accuracy": 0.7467,
+    "test_accuracy": 0.7295
+  },
+  {
+    "fl_round": 3,
+    "epsilon_consumed": 7.7362,
+    "budget_remaining": 2.2638,
+    "budget_exhausted": false,
+    "train_accuracy": 0.8438,
+    "test_accuracy": 0.8003
+  },
+  {
+    "fl_round": 4,
+    "epsilon_consumed": 8.9152,
+    "budget_remaining": 1.0848,
+    "budget_exhausted": false,
+    "train_accuracy": 0.8865,
+    "test_accuracy": 0.8277
+  },
+  {
+    "fl_round": 5,
+    "epsilon_consumed": 9.9974,
+    "budget_remaining": 0.0026,
+    "budget_exhausted": false,
+    "train_accuracy": 0.8997,
+    "test_accuracy": 0.8728
+  }
+]
