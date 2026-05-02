@@ -2,6 +2,7 @@
 Flower FL client for one HAR CSV / organisation.
 """
 import argparse
+import json
 import os
 import sys
 from collections import OrderedDict
@@ -17,6 +18,17 @@ sys.path.insert(0, os.path.dirname(__file__))
 from data_utils import load_class_weights, load_csv_data  # noqa: E402
 from model import get_model  # noqa: E402
 from train_local import evaluate, train_one_epoch  # noqa: E402
+
+# ── M1 (crypto): import crypto layer ─────────────────────────────────────────
+_CRYPTO_DIR = os.path.join(os.path.dirname(__file__), "..", "crypto", "certs")
+sys.path.insert(0, os.path.abspath(_CRYPTO_DIR))
+try:
+    from crypto_context import CryptoContext  # noqa: E402
+    _CRYPTO_AVAILABLE = True
+except ImportError:
+    _CRYPTO_AVAILABLE = False
+    print("[fl_client] WARNING: crypto_context not found — running without encryption.")
+# ─────────────────────────────────────────────────────────────────────────────
 
 # ── M2: per-client delta values (row counts confirmed in contracts.md) ───────
 # delta = 1 / n_train  where n_train = 80% of total rows (0.8 × client rows)
@@ -45,11 +57,27 @@ class IntelliClaveClient(fl.client.NumPyClient):
         max_grad_norm: float = 1.0,
         num_fl_rounds: int = 5,        # ── M2 FIX: total FL rounds for correct DP budget
         # ─────────────────────────────────────────────────────────────────────────
+        # ── M1 (crypto): optional encryption of weights in transit ───────────────
+        use_crypto: bool = False,
+        server_public_pem: bytes = None,  # server's RSA public key (PEM bytes)
+        # ─────────────────────────────────────────────────────────────────────────
     ):
         self.cid = client_id
         self.local_epochs = local_epochs
         self.device = torch.device("cpu")
         self.num_fl_rounds = num_fl_rounds  # ── M2 FIX: store for use in _attach_privacy_engine
+
+        # ── M1 (crypto): set up client-side crypto context ───────────────────────
+        self.use_crypto = use_crypto and _CRYPTO_AVAILABLE and server_public_pem is not None
+        self._crypto_ctx = None
+        if self.use_crypto:
+            self._crypto_ctx = CryptoContext.from_public_pem(server_public_pem)
+            print(f"[Client {client_id}][Crypto] Encryption enabled — weights will be "
+                  "AES-256-GCM encrypted before transmission.")
+        elif use_crypto:
+            print(f"[Client {client_id}][Crypto] WARNING: crypto requested but unavailable "
+                  "— running without encryption.")
+        # ─────────────────────────────────────────────────────────────────────────
 
         # M1 original data loading — untouched
         self.train_loader, self.test_loader, self.metadata = load_csv_data(csv_path)
@@ -134,20 +162,28 @@ class IntelliClaveClient(fl.client.NumPyClient):
             self.use_dp = False
     # ─────────────────────────────────────────────────────────────────────────────
 
-    # M1 original — untouched
+    # ── M1 (crypto): get plaintext weights (server reads these for init) ─────
     def get_parameters(self, config) -> List[np.ndarray]:
         return [value.cpu().numpy() for value in self.model.state_dict().values()]
+    # ─────────────────────────────────────────────────────────────────────────
 
-    # M1 original — untouched
+    # ── M1 (crypto): decrypt weights received from server ────────────────────
+    # NOTE: Encryption is client→server only. The server always sends plaintext
+    # weights back (initial model + post-aggregation). set_parameters just loads
+    # them directly — no decryption needed here.
     def set_parameters(self, parameters: List[np.ndarray]):
         state_dict = OrderedDict(
-            (
-                key,
-                torch.tensor(value),
-            )
+            (key, torch.tensor(value))
             for key, value in zip(self.model.state_dict().keys(), parameters)
         )
         self.model.load_state_dict(state_dict, strict=True)
+    # ─────────────────────────────────────────────────────────────────────────
+        state_dict = OrderedDict(
+            (key, torch.tensor(value))
+            for key, value in zip(self.model.state_dict().keys(), parameters)
+        )
+        self.model.load_state_dict(state_dict, strict=True)
+    # ─────────────────────────────────────────────────────────────────────────
 
     def fit(self, parameters, config) -> Tuple[List[np.ndarray], int, Dict]:
         # M1 original — untouched
@@ -185,8 +221,19 @@ class IntelliClaveClient(fl.client.NumPyClient):
             )
         # ─────────────────────────────────────────────────────────────────────────
 
+        # ── M1 (crypto): encrypt weights before sending to server ────────────────
+        outgoing_weights = self.get_parameters({})
+        if self.use_crypto and self._crypto_ctx is not None:
+            payload = self._crypto_ctx.encrypt_weights(outgoing_weights)
+            payload_bytes = json.dumps(payload).encode()
+            packed = np.frombuffer(payload_bytes, dtype=np.uint8).copy()
+            print(f"[Client {self.cid}][Crypto] fit() weights encrypted "
+                  f"({len(payload_bytes):,} bytes)")
+            outgoing_weights = [packed]
+        # ─────────────────────────────────────────────────────────────────────────
+
         return (
-            self.get_parameters({}),
+            outgoing_weights,
             len(self.train_loader.dataset),
             metrics,
         )
@@ -227,6 +274,10 @@ def start_client(
     max_grad_norm: float = 1.0,
     num_fl_rounds: int = 5,            # ── M2 FIX: forwarded through to client
     # ─────────────────────────────────────────────────────────────────────────────
+    # ── M1 (crypto): optional encryption ────────────────────────────────────────
+    use_crypto: bool = False,
+    server_public_pem: bytes = None,
+    # ─────────────────────────────────────────────────────────────────────────────
 ):
     fl.client.start_numpy_client(
         server_address=server_address,
@@ -238,6 +289,10 @@ def start_client(
             target_epsilon=target_epsilon,
             max_grad_norm=max_grad_norm,
             num_fl_rounds=num_fl_rounds,   # ── M2 FIX: passed through
+            # ────────────────────────────────────────────────────────────────────
+            # ── M1 (crypto) ─────────────────────────────────────────────────────
+            use_crypto=use_crypto,
+            server_public_pem=server_public_pem,
             # ────────────────────────────────────────────────────────────────────
         ),
     )
@@ -273,8 +328,38 @@ if __name__ == "__main__":
         default=5,
         help="[M2] Total FL rounds — must match server --rounds. Default=5.",  # ── M2 FIX
     )
+    # ── M1 (crypto): encryption flags ───────────────────────────────────────────
+    parser.add_argument(
+        "--crypto",
+        action="store_true",
+        help="[Crypto] Encrypt weights in transit using AES-256-GCM + RSA.",
+    )
+    parser.add_argument(
+        "--pubkey",
+        default=None,
+        help="[Crypto] Path to server public key PEM file. "
+             "Defaults to crypto/certs/keys/server_public.pem",
+    )
     # ─────────────────────────────────────────────────────────────────────────────
     args = parser.parse_args()
+
+    # ── M1 (crypto): load public key if crypto enabled ───────────────────────────
+    server_public_pem = None
+    if args.crypto:
+        pubkey_path = args.pubkey or os.path.join(
+            os.path.dirname(__file__), "..", "crypto", "certs", "keys", "server_public.pem"
+        )
+        pubkey_path = os.path.abspath(pubkey_path)
+        if not os.path.exists(pubkey_path):
+            print(f"[Crypto] ERROR: public key not found at {pubkey_path}")
+            print("         Start the server first (it generates the keypair), "
+                  "then copy server_public.pem to clients.")
+            raise SystemExit(1)
+        with open(pubkey_path, "rb") as f:
+            server_public_pem = f.read()
+        print(f"[Crypto] Loaded server public key from {pubkey_path}")
+    # ─────────────────────────────────────────────────────────────────────────────
+
     start_client(
         args.csv,
         args.id,
@@ -284,5 +369,9 @@ if __name__ == "__main__":
         target_epsilon=args.epsilon,
         max_grad_norm=args.max_grad_norm,
         num_fl_rounds=args.rounds,         # ── M2 FIX: passed through
+        # ────────────────────────────────────────────────────────────────────────
+        # ── M1 (crypto) ─────────────────────────────────────────────────────────
+        use_crypto=args.crypto,
+        server_public_pem=server_public_pem,
         # ────────────────────────────────────────────────────────────────────────
     )

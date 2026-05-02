@@ -1,0 +1,49 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python deps
+RUN pip install --no-cache-dir \
+    flwr==1.6.0 \
+    torch==2.1.0 \
+    numpy==1.24.3 \
+    pandas==2.0.3 \
+    scikit-learn==1.3.2 \
+    cryptography==41.0.7 \
+    opacus==1.4.0
+
+# Copy project source
+COPY fl/           ./fl/
+COPY crypto/       ./crypto/
+COPY data/class_weights.json ./data/class_weights.json
+
+# CLIENT_ID  : 1, 2, or 3  (set at runtime)
+# SERVER_ADDR: fl-server:8080 in K8s, 127.0.0.1:8080 locally
+# CSV_PATH   : path to the client's processed CSV (mounted via volume)
+# USE_CRYPTO : --crypto flag (set to "--crypto" to enable, "" to disable)
+# USE_DP     : --dp flag (set to "--dp" to enable, "" to disable)
+# EPSILON    : DP epsilon target (default 10.0)
+# ROUNDS     : must match server --rounds
+
+ENV CLIENT_ID=1
+ENV SERVER_ADDR=fl-server:8080
+ENV CSV_PATH=/app/data/processed/client1.csv
+ENV USE_CRYPTO=""
+ENV USE_DP=""
+ENV EPSILON=10.0
+ENV ROUNDS=10
+
+CMD ["sh", "-c", \
+    "python fl/run_client.py \
+        --id $CLIENT_ID \
+        --csv $CSV_PATH \
+        --server $SERVER_ADDR \
+        $USE_CRYPTO \
+        $USE_DP \
+        --epsilon $EPSILON \
+        --rounds $ROUNDS"]

@@ -1,0 +1,15 @@
+.git
+.vscode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+node_modules
+dashboard/frontend/intelliclave-ui/node_modules
+UCI HAR Dataset
+results/fl_rounds/*.pth
+results/fl_rounds/*.npz
+results/plots
+*.docx
+*.pkl
+report

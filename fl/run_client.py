@@ -14,6 +14,17 @@ if __name__ == "__main__":
     parser.add_argument("--id", required=True, help="Client ID, for example 1, 2, or 3.")
     parser.add_argument("--csv", default=None)
     parser.add_argument("--server", default="127.0.0.1:8080")
+    parser.add_argument("--crypto", action="store_true",
+                        help="Enable AES-256-GCM + RSA weight encryption.")
+    parser.add_argument("--pubkey", default=None,
+                        help="Path to server_public.pem. "
+                             "Defaults to crypto/certs/keys/server_public.pem")
+    parser.add_argument("--dp", action="store_true",
+                        help="Enable Differential Privacy via Opacus.")
+    parser.add_argument("--epsilon", type=float, default=10.0,
+                        help="DP target epsilon. Default=10.0.")
+    parser.add_argument("--rounds", type=int, default=5,
+                        help="Total FL rounds — must match server --rounds.")
     args = parser.parse_args()
 
     client_index = int(args.id) - 1
@@ -25,4 +36,27 @@ if __name__ == "__main__":
             )
         csv_path = default_csvs[client_index]
 
-    start_client(csv_path=csv_path, client_id=args.id, server_address=args.server)
+    # Load public key if crypto requested
+    server_public_pem = None
+    if args.crypto:
+        pubkey_path = args.pubkey or os.path.join(
+            os.path.dirname(__file__), "..", "crypto", "certs", "keys", "server_public.pem"
+        )
+        pubkey_path = os.path.abspath(pubkey_path)
+        if not os.path.exists(pubkey_path):
+            print(f"[Crypto] ERROR: public key not found at {pubkey_path}")
+            print("         Start the server with --crypto first to generate the keypair.")
+            raise SystemExit(1)
+        with open(pubkey_path, "rb") as f:
+            server_public_pem = f.read()
+
+    start_client(
+        csv_path=csv_path,
+        client_id=args.id,
+        server_address=args.server,
+        use_crypto=args.crypto,
+        server_public_pem=server_public_pem,
+        use_dp=args.dp,
+        target_epsilon=args.epsilon,
+        num_fl_rounds=args.rounds,
+    )

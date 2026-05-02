@@ -15,3 +15,32 @@ spec:
       containers:
       - name: fl-client-2
         image: fl-client-image:latest
+        env:
+        - name: CLIENT_ID
+          value: "2"
+        - name: SERVER_ADDR
+          value: "fl-server-service:8080"
+        - name: CSV_PATH
+          value: "/app/data/processed/client2.csv"
+        - name: USE_CRYPTO
+          value: "--crypto"
+        - name: USE_DP
+          value: ""
+        - name: EPSILON
+          value: "10.0"
+        - name: ROUNDS
+          value: "10"
+        volumeMounts:
+        - name: client-data
+          mountPath: /app/data/processed
+          readOnly: true
+        - name: crypto-keys
+          mountPath: /app/crypto/certs/keys
+          readOnly: true
+      volumes:
+      - name: client-data
+        persistentVolumeClaim:
+          claimName: client-2-pvc
+      - name: crypto-keys
+        secret:
+          secretName: fl-crypto-keys

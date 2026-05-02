@@ -14,6 +14,8 @@ if __name__ == "__main__":
     parser.add_argument("--local-epochs", type=int, default=3)
     parser.add_argument("--address", default="0.0.0.0:8080")
     parser.add_argument("--save-dir", default="results/fl_rounds")
+    parser.add_argument("--crypto", action="store_true",
+                        help="Enable AES-256-GCM + RSA weight encryption.")
     args = parser.parse_args()
 
     start_server(
@@ -23,4 +25,5 @@ if __name__ == "__main__":
         local_epochs=args.local_epochs,
         server_address=args.address,
         save_dir=args.save_dir,
+        use_crypto=args.crypto,
     )

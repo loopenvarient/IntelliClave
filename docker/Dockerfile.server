@@ -1,0 +1,32 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python deps first (layer cache)
+COPY requirements.txt .
+RUN pip install --no-cache-dir \
+    flwr==1.6.0 \
+    torch==2.1.0 \
+    numpy==1.24.3 \
+    pandas==2.0.3 \
+    scikit-learn==1.3.2 \
+    cryptography==41.0.7
+
+# Copy project source
+COPY fl/           ./fl/
+COPY crypto/       ./crypto/
+COPY data/class_weights.json ./data/class_weights.json
+COPY data/processed/         ./data/processed/
+
+# Results dir for model checkpoints
+RUN mkdir -p results/fl_rounds
+
+# Flower gRPC port
+EXPOSE 8080
+
+CMD ["python", "fl/run_server.py", "--rounds", "10", "--min-clients", "3", "--address", "0.0.0.0:8080"]

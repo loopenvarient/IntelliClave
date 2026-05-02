@@ -16,7 +16,7 @@ spec:
       - name: fl-server
         image: fl-server-image:latest
         ports:
-        - containerPort: 8000
+        - containerPort: 8080
         volumeMounts:
         - name: server-storage
           mountPath: /app/data

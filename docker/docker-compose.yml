@@ -1,0 +1,110 @@
+version: "3.9"
+
+# IntelliClave — FL + DP + Crypto full stack
+#
+# Usage (plain FL + crypto):
+#   docker compose -f docker/docker-compose.yml up --build
+#
+# Usage (FL + DP + crypto):
+#   USE_DP=--dp docker compose -f docker/docker-compose.yml up --build
+#
+# Usage (no crypto):
+#   USE_CRYPTO="" docker compose -f docker/docker-compose.yml up --build
+
+x-client-base: &client-base
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile.client
+  depends_on:
+    fl-server:
+      condition: service_healthy
+  networks:
+    - fl-net
+  environment:
+    SERVER_ADDR: "fl-server:8080"
+    USE_CRYPTO: "${USE_CRYPTO:---crypto}"
+    USE_DP: "${USE_DP:-}"
+    EPSILON: "${EPSILON:-10.0}"
+    ROUNDS: "${ROUNDS:-10}"
+
+services:
+
+  fl-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    container_name: fl-server
+    ports:
+      - "8080:8080"
+    volumes:
+      - server-results:/app/results
+      - ../crypto/certs/keys:/app/crypto/certs/keys
+    networks:
+      - fl-net
+    environment:
+      ROUNDS: "${ROUNDS:-10}"
+    command: >
+      sh -c "python fl/run_server.py
+        --rounds ${ROUNDS:-10}
+        --min-clients 3
+        --address 0.0.0.0:8080
+        ${USE_CRYPTO:---crypto}"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import socket; s=socket.socket(); s.connect(('localhost',8080)); s.close()"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  fl-client-1:
+    <<: *client-base
+    container_name: fl-client-1
+    volumes:
+      - ../data/processed/client1.csv:/app/data/processed/client1.csv:ro
+      - ../crypto/certs/keys:/app/crypto/certs/keys:ro
+    environment:
+      CLIENT_ID: "1"
+      CSV_PATH: "/app/data/processed/client1.csv"
+      SERVER_ADDR: "fl-server:8080"
+      USE_CRYPTO: "${USE_CRYPTO:---crypto}"
+      USE_DP: "${USE_DP:-}"
+      EPSILON: "${EPSILON:-10.0}"
+      ROUNDS: "${ROUNDS:-10}"
+
+  fl-client-2:
+    <<: *client-base
+    container_name: fl-client-2
+    volumes:
+      - ../data/processed/client2.csv:/app/data/processed/client2.csv:ro
+      - ../crypto/certs/keys:/app/crypto/certs/keys:ro
+    environment:
+      CLIENT_ID: "2"
+      CSV_PATH: "/app/data/processed/client2.csv"
+      SERVER_ADDR: "fl-server:8080"
+      USE_CRYPTO: "${USE_CRYPTO:---crypto}"
+      USE_DP: "${USE_DP:-}"
+      EPSILON: "${EPSILON:-10.0}"
+      ROUNDS: "${ROUNDS:-10}"
+
+  fl-client-3:
+    <<: *client-base
+    container_name: fl-client-3
+    volumes:
+      - ../data/processed/client3.csv:/app/data/processed/client3.csv:ro
+      - ../crypto/certs/keys:/app/crypto/certs/keys:ro
+    environment:
+      CLIENT_ID: "3"
+      CSV_PATH: "/app/data/processed/client3.csv"
+      SERVER_ADDR: "fl-server:8080"
+      USE_CRYPTO: "${USE_CRYPTO:---crypto}"
+      USE_DP: "${USE_DP:-}"
+      EPSILON: "${EPSILON:-10.0}"
+      ROUNDS: "${ROUNDS:-10}"
+
+volumes:
+  server-results:
+
+networks:
+  fl-net:
+    driver: bridge

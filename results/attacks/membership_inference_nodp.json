@@ -1,0 +1,64 @@
+{
+  "attack": "membership_inference",
+  "results": [
+    {
+      "client_id": 1,
+      "client_name": "FitLife",
+      "n_members": 2173,
+      "n_nonmembers": 932,
+      "metrics": {
+        "auc": 0.505135,
+        "best_threshold": 0.506456,
+        "accuracy": 0.700161,
+        "precision": 0.700452,
+        "recall": 0.998619,
+        "member_conf_mean": 0.966156,
+        "nonmember_conf_mean": 0.962397,
+        "conf_gap": 0.003759
+      },
+      "risk_level": "LOW"
+    },
+    {
+      "client_id": 2,
+      "client_name": "MediTrack",
+      "n_members": 2398,
+      "n_nonmembers": 1028,
+      "metrics": {
+        "auc": 0.507083,
+        "best_threshold": 0.504449,
+        "accuracy": 0.700817,
+        "precision": 0.700555,
+        "recall": 1.0,
+        "member_conf_mean": 0.96723,
+        "nonmember_conf_mean": 0.965634,
+        "conf_gap": 0.001596
+      },
+      "risk_level": "LOW"
+    },
+    {
+      "client_id": 3,
+      "client_name": "CareWatch",
+      "n_members": 2637,
+      "n_nonmembers": 1131,
+      "metrics": {
+        "auc": 0.511963,
+        "best_threshold": 0.502599,
+        "accuracy": 0.700106,
+        "precision": 0.700133,
+        "recall": 0.999621,
+        "member_conf_mean": 0.975581,
+        "nonmember_conf_mean": 0.971458,
+        "conf_gap": 0.004124
+      },
+      "risk_level": "LOW"
+    }
+  ],
+  "summary": {
+    "avg_auc": 0.50806,
+    "avg_accuracy": 0.700361,
+    "avg_conf_gap": 0.00316,
+    "high_risk_clients": 0,
+    "verdict": "RESISTANT \u2014 confidence gap is small, attack near random (AUC \u2248 0.5)",
+    "dp_note": "Re-run with DP-trained model (--dp flag) to compare. DP-SGD should reduce the confidence gap and lower attack AUC."
+  }
+}

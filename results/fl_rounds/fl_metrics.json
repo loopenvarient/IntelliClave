@@ -1,32 +1,32 @@
 [
   {
     "round": 1,
-    "loss": 1.60637,
-    "accuracy": 0.58855,
-    "macro_f1": 0.52561
+    "loss": 1.61398,
+    "accuracy": 0.54488,
+    "macro_f1": 0.4848
   },
   {
     "round": 2,
-    "loss": 1.11079,
-    "accuracy": 0.80932,
-    "macro_f1": 0.79328
+    "loss": 1.13071,
+    "accuracy": 0.80786,
+    "macro_f1": 0.80271
   },
   {
     "round": 3,
-    "loss": 0.60643,
-    "accuracy": 0.85298,
-    "macro_f1": 0.84266
+    "loss": 0.63048,
+    "accuracy": 0.84813,
+    "macro_f1": 0.84072
   },
   {
     "round": 4,
-    "loss": 0.36161,
-    "accuracy": 0.88452,
-    "macro_f1": 0.88033
+    "loss": 0.40112,
+    "accuracy": 0.86172,
+    "macro_f1": 0.85522
   },
   {
     "round": 5,
-    "loss": 0.25292,
-    "accuracy": 0.91266,
-    "macro_f1": 0.91174
+    "loss": 0.27581,
+    "accuracy": 0.90102,
+    "macro_f1": 0.90019
   }
 ]

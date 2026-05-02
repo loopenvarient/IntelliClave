@@ -1,0 +1,17 @@
+{
+  "rounds": [
+    {"round": 1, "macro_f1": 0.61, "accuracy": 0.63, "epsilon": 0.22},
+    {"round": 2, "macro_f1": 0.69, "accuracy": 0.71, "epsilon": 0.41},
+    {"round": 3, "macro_f1": 0.74, "accuracy": 0.76, "epsilon": 0.58},
+    {"round": 4, "macro_f1": 0.79, "accuracy": 0.81, "epsilon": 0.77},
+    {"round": 5, "macro_f1": 0.82, "accuracy": 0.83, "epsilon": 0.95}
+  ],
+  "per_class_f1": {
+    "WALKING": 0.91,
+    "WALKING_UPSTAIRS": 0.84,
+    "WALKING_DOWNSTAIRS": 0.79,
+    "SITTING": 0.80,
+    "STANDING": 0.78,
+    "LAYING": 0.88
+  }
+}
