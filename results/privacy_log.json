@@ -1,0 +1,167 @@
+[
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 1,
+    "client_id": "1",
+    "epsilon": 4.940999181097729,
+    "delta": 0.00040257648953301127,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 5.059,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 1,
+    "client_id": "2",
+    "epsilon": 4.982356513998886,
+    "delta": 0.000364963503649635,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 5.0176,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 1,
+    "client_id": "3",
+    "epsilon": 5.024028455465353,
+    "delta": 0.00033178500331785003,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 4.976,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 2,
+    "client_id": "2",
+    "epsilon": 6.5477245358899205,
+    "delta": 0.000364963503649635,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 3.4523,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 2,
+    "client_id": "3",
+    "epsilon": 6.577846251928432,
+    "delta": 0.00033178500331785003,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 3.4222,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 2,
+    "client_id": "1",
+    "epsilon": 6.5179511134602155,
+    "delta": 0.00040257648953301127,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 3.482,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 3,
+    "client_id": "3",
+    "epsilon": 7.845692628698041,
+    "delta": 0.00033178500331785003,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 2.1543,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 3,
+    "client_id": "1",
+    "epsilon": 7.806977116229516,
+    "delta": 0.00040257648953301127,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 2.193,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 3,
+    "client_id": "2",
+    "epsilon": 7.826116514707597,
+    "delta": 0.000364963503649635,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 2.1739,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 4,
+    "client_id": "2",
+    "epsilon": 8.956325481778077,
+    "delta": 0.000364963503649635,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 1.0437,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 4,
+    "client_id": "1",
+    "epsilon": 8.947284903707502,
+    "delta": 0.00040257648953301127,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 1.0527,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 4,
+    "client_id": "3",
+    "epsilon": 8.965875896121645,
+    "delta": 0.00033178500331785003,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 1.0341,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 5,
+    "client_id": "1",
+    "epsilon": 9.992497408128738,
+    "delta": 0.00040257648953301127,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 0.0075,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 5,
+    "client_id": "3",
+    "epsilon": 9.991681388209578,
+    "delta": 0.00033178500331785003,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 0.0083,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-04-26T21:38:29.931429",
+    "round": 5,
+    "client_id": "2",
+    "epsilon": 9.991792339535102,
+    "delta": 0.000364963503649635,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 0.0082,
+    "budget_exhausted": false
+  }
+]
