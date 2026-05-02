@@ -1,0 +1,9 @@
+{
+  "tee_overhead_ms": [
+    {"operation": "encrypt_gradients", "baseline_ms": 12, "tee_ms": 18},
+    {"operation": "aggregate_round",   "baseline_ms": 45, "tee_ms": 61},
+    {"operation": "decrypt_model",     "baseline_ms": 10, "tee_ms": 15},
+    {"operation": "forward_pass",      "baseline_ms": 8,  "tee_ms": 9},
+    {"operation": "backward_pass",     "baseline_ms": 22, "tee_ms": 27}
+  ]
+}
