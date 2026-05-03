@@ -1,32 +1,52 @@
+# ── IntelliClave FL Server ────────────────────────────────────────────────────
+# Runs: fl/run_server.py (Flower FedAvg + crypto layer)
+# Port: 8080 (Flower gRPC)
+#
+# Build:
+#   docker build -f docker/Dockerfile.server -t intelliclave-server:latest .
+# Run (standalone):
+#   docker run -p 8080:8080 intelliclave-server:latest
+
 FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system deps
+# ── System dependencies ───────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python deps first (layer cache)
-COPY requirements.txt .
+# ── Python dependencies (pinned, layer-cached) ───────────────────────────────
+# torch 2.2.2 is the oldest version available for linux/amd64 on PyPI
 RUN pip install --no-cache-dir \
-    flwr==1.6.0 \
-    torch==2.1.0 \
+    torch==2.2.2 \
     numpy==1.24.3 \
     pandas==2.0.3 \
     scikit-learn==1.3.2 \
+    flwr==1.6.0 \
     cryptography==41.0.7
 
-# Copy project source
-COPY fl/           ./fl/
-COPY crypto/       ./crypto/
-COPY data/class_weights.json ./data/class_weights.json
-COPY data/processed/         ./data/processed/
+# ── Project source ────────────────────────────────────────────────────────────
+COPY fl/                         ./fl/
+COPY crypto/                     ./crypto/
+COPY data/class_weights.json     ./data/class_weights.json
 
-# Results dir for model checkpoints
+# Results directory for model checkpoints and privacy logs
 RUN mkdir -p results/fl_rounds
+
+# ── Runtime config ────────────────────────────────────────────────────────────
+ENV ROUNDS=10
+ENV MIN_CLIENTS=3
+ENV ADDRESS=0.0.0.0:8080
+ENV USE_CRYPTO=--crypto
 
 # Flower gRPC port
 EXPOSE 8080
 
-CMD ["python", "fl/run_server.py", "--rounds", "10", "--min-clients", "3", "--address", "0.0.0.0:8080"]
+# Entrypoint: supports USE_CRYPTO env var to toggle crypto layer
+CMD sh -c "python fl/run_server.py \
+    --rounds ${ROUNDS} \
+    --min-clients ${MIN_CLIENTS} \
+    --address ${ADDRESS} \
+    ${USE_CRYPTO}"

@@ -6,7 +6,7 @@ evaluation/cross_validation.py
 Runs CV on each client CSV independently, then on the combined dataset,
 giving a split-independent estimate of model accuracy and F1.
 
-Uses M1's model (HARClassifier) and data pipeline (StandardScaler, label
+Uses the HARClassifier model and data pipeline (StandardScaler, label
 conversion) — no FL or DP involved, pure local evaluation.
 
 Usage:
@@ -41,8 +41,8 @@ _ROOT = os.path.abspath(os.path.join(_HERE, ".."))
 _FL   = os.path.join(_ROOT, "fl")
 sys.path.insert(0, _FL)
 
-from model import get_model                  # M1's HARClassifier
-from data_utils import load_class_weights, ACTIVITY_NAMES  # M1's helpers
+from model import get_model                  # HARClassifier
+from data_utils import load_class_weights, ACTIVITY_NAMES  # data helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
 N_CLASSES   = 6

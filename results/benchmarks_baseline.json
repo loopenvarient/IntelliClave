@@ -1,9 +1,10 @@
 {
+  "note": "Baseline measured outside Gramine (10 runs each). TEE values estimated at ~35-40% overhead based on gramine-direct profiling.",
   "tee_overhead_ms": [
-    {"operation": "encrypt_gradients", "baseline_ms": 12, "tee_ms": 18},
-    {"operation": "aggregate_round",   "baseline_ms": 45, "tee_ms": 61},
-    {"operation": "decrypt_model",     "baseline_ms": 10, "tee_ms": 15},
-    {"operation": "forward_pass",      "baseline_ms": 8,  "tee_ms": 9},
-    {"operation": "backward_pass",     "baseline_ms": 22, "tee_ms": 27}
+    {"operation": "model_inference",  "baseline_ms": 0.41,  "tee_ms": 0.56,  "overhead_pct": 36.6},
+    {"operation": "training_step",    "baseline_ms": 2.62,  "tee_ms": 3.54,  "overhead_pct": 35.1},
+    {"operation": "aes_encrypt",      "baseline_ms": 1.45,  "tee_ms": 1.96,  "overhead_pct": 35.2},
+    {"operation": "aes_decrypt",      "baseline_ms": 4.78,  "tee_ms": 6.45,  "overhead_pct": 34.9},
+    {"operation": "model_save",       "baseline_ms": 2.76,  "tee_ms": 3.73,  "overhead_pct": 35.1}
   ]
 }

@@ -1,0 +1,333 @@
+# ── FL Clients 1, 2, 3 — SGX Pods (production) ───────────────────────────────
+# Each client runs inside gramine-sgx.
+# Init container verifies server attestation before FL connection.
+# Raw CSV data is mounted read-only — never leaves the enclave.
+
+---
+# ── Client 1 — FitLife ────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fl-client-1-sgx
+  namespace: intelliclave
+  labels:
+    app: fl-client-1
+    role: fl-client
+    tee: gramine-sgx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fl-client-1
+  template:
+    metadata:
+      labels:
+        app: fl-client-1
+        role: fl-client
+        tee: gramine-sgx
+    spec:
+      # ── Init container: verify server attestation before connecting ──────────
+      initContainers:
+      - name: verify-attestation
+        image: intelliclave-client:latest
+        imagePullPolicy: IfNotPresent
+        command:
+          - python3
+          - -c
+          - |
+            import sys; sys.path.insert(0, '/app')
+            from tee.attestation.attestation_integration import AttestationClient
+            c = AttestationClient(client_id='1')
+            c.verify()
+            print('Attestation OK — proceeding to FL')
+        volumeMounts:
+        - name: server-results
+          mountPath: /app/results
+          readOnly: true
+
+      # ── Main container: FL client inside gramine-sgx ─────────────────────────
+      containers:
+      - name: fl-client-1
+        image: intelliclave-client:latest
+        imagePullPolicy: IfNotPresent
+        command:
+          - gramine-sgx
+          - python3
+          - fl/fl_client.py
+          - --csv
+          - /app/data/processed/client1.csv
+          - --id
+          - "1"
+          - --server
+          - fl-server-service:8080
+          - --dp
+          - --epsilon
+          - "10.0"
+          - --rounds
+          - "5"
+          - --crypto
+        env:
+        - name: OMP_NUM_THREADS
+          value: "1"
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "1Gi"
+            sgx.intel.com/enclave:   "1"
+            sgx.intel.com/provision: "1"
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+            sgx.intel.com/enclave:   "1"
+            sgx.intel.com/provision: "1"
+        volumeMounts:
+        - name: client-data
+          mountPath: /app/data/processed
+          readOnly: true
+        - name: crypto-keys
+          mountPath: /app/crypto/certs/keys
+          readOnly: true
+        - name: server-results
+          mountPath: /app/results
+          readOnly: true
+        - name: sgx-device
+          mountPath: /dev/sgx_enclave
+        - name: sgx-provision
+          mountPath: /dev/sgx_provision
+
+      volumes:
+      - name: client-data
+        persistentVolumeClaim:
+          claimName: client-1-pvc
+      - name: crypto-keys
+        secret:
+          secretName: fl-crypto-keys
+      - name: server-results
+        persistentVolumeClaim:
+          claimName: fl-server-pvc
+      - name: sgx-device
+        hostPath:
+          path: /dev/sgx_enclave
+          type: CharDevice
+      - name: sgx-provision
+        hostPath:
+          path: /dev/sgx_provision
+          type: CharDevice
+
+---
+# ── Client 2 — MediTrack ─────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fl-client-2-sgx
+  namespace: intelliclave
+  labels:
+    app: fl-client-2
+    role: fl-client
+    tee: gramine-sgx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fl-client-2
+  template:
+    metadata:
+      labels:
+        app: fl-client-2
+        role: fl-client
+        tee: gramine-sgx
+    spec:
+      initContainers:
+      - name: verify-attestation
+        image: intelliclave-client:latest
+        imagePullPolicy: IfNotPresent
+        command:
+          - python3
+          - -c
+          - |
+            import sys; sys.path.insert(0, '/app')
+            from tee.attestation.attestation_integration import AttestationClient
+            c = AttestationClient(client_id='2')
+            c.verify()
+            print('Attestation OK — proceeding to FL')
+        volumeMounts:
+        - name: server-results
+          mountPath: /app/results
+          readOnly: true
+
+      containers:
+      - name: fl-client-2
+        image: intelliclave-client:latest
+        imagePullPolicy: IfNotPresent
+        command:
+          - gramine-sgx
+          - python3
+          - fl/fl_client.py
+          - --csv
+          - /app/data/processed/client2.csv
+          - --id
+          - "2"
+          - --server
+          - fl-server-service:8080
+          - --dp
+          - --epsilon
+          - "10.0"
+          - --rounds
+          - "5"
+          - --crypto
+        env:
+        - name: OMP_NUM_THREADS
+          value: "1"
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "1Gi"
+            sgx.intel.com/enclave:   "1"
+            sgx.intel.com/provision: "1"
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+            sgx.intel.com/enclave:   "1"
+            sgx.intel.com/provision: "1"
+        volumeMounts:
+        - name: client-data
+          mountPath: /app/data/processed
+          readOnly: true
+        - name: crypto-keys
+          mountPath: /app/crypto/certs/keys
+          readOnly: true
+        - name: server-results
+          mountPath: /app/results
+          readOnly: true
+        - name: sgx-device
+          mountPath: /dev/sgx_enclave
+        - name: sgx-provision
+          mountPath: /dev/sgx_provision
+
+      volumes:
+      - name: client-data
+        persistentVolumeClaim:
+          claimName: client-2-pvc
+      - name: crypto-keys
+        secret:
+          secretName: fl-crypto-keys
+      - name: server-results
+        persistentVolumeClaim:
+          claimName: fl-server-pvc
+      - name: sgx-device
+        hostPath:
+          path: /dev/sgx_enclave
+          type: CharDevice
+      - name: sgx-provision
+        hostPath:
+          path: /dev/sgx_provision
+          type: CharDevice
+
+---
+# ── Client 3 — CareWatch ─────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fl-client-3-sgx
+  namespace: intelliclave
+  labels:
+    app: fl-client-3
+    role: fl-client
+    tee: gramine-sgx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fl-client-3
+  template:
+    metadata:
+      labels:
+        app: fl-client-3
+        role: fl-client
+        tee: gramine-sgx
+    spec:
+      initContainers:
+      - name: verify-attestation
+        image: intelliclave-client:latest
+        imagePullPolicy: IfNotPresent
+        command:
+          - python3
+          - -c
+          - |
+            import sys; sys.path.insert(0, '/app')
+            from tee.attestation.attestation_integration import AttestationClient
+            c = AttestationClient(client_id='3')
+            c.verify()
+            print('Attestation OK — proceeding to FL')
+        volumeMounts:
+        - name: server-results
+          mountPath: /app/results
+          readOnly: true
+
+      containers:
+      - name: fl-client-3
+        image: intelliclave-client:latest
+        imagePullPolicy: IfNotPresent
+        command:
+          - gramine-sgx
+          - python3
+          - fl/fl_client.py
+          - --csv
+          - /app/data/processed/client3.csv
+          - --id
+          - "3"
+          - --server
+          - fl-server-service:8080
+          - --dp
+          - --epsilon
+          - "10.0"
+          - --rounds
+          - "5"
+          - --crypto
+        env:
+        - name: OMP_NUM_THREADS
+          value: "1"
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "1Gi"
+            sgx.intel.com/enclave:   "1"
+            sgx.intel.com/provision: "1"
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+            sgx.intel.com/enclave:   "1"
+            sgx.intel.com/provision: "1"
+        volumeMounts:
+        - name: client-data
+          mountPath: /app/data/processed
+          readOnly: true
+        - name: crypto-keys
+          mountPath: /app/crypto/certs/keys
+          readOnly: true
+        - name: server-results
+          mountPath: /app/results
+          readOnly: true
+        - name: sgx-device
+          mountPath: /dev/sgx_enclave
+        - name: sgx-provision
+          mountPath: /dev/sgx_provision
+
+      volumes:
+      - name: client-data
+        persistentVolumeClaim:
+          claimName: client-3-pvc
+      - name: crypto-keys
+        secret:
+          secretName: fl-crypto-keys
+      - name: server-results
+        persistentVolumeClaim:
+          claimName: fl-server-pvc
+      - name: sgx-device
+        hostPath:
+          path: /dev/sgx_enclave
+          type: CharDevice
+      - name: sgx-provision
+        hostPath:
+          path: /dev/sgx_provision
+          type: CharDevice

@@ -16,7 +16,7 @@ class DPFlowerClient(fl.client.NumPyClient):
     def __init__(self, client_id, model, csv_path):
         """
         client_id : "client1", "client2", or "client3"
-        model     : M1's MLP — imported from fl/model.py (wherever M1 puts it)
+        model     : MLP — imported from fl/model.py
         csv_path  : path to the frozen client CSV
         """
         self.client_id = client_id

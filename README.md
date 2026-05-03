@@ -22,15 +22,15 @@ Three layers make this possible:
 
 | Member | Responsibility |
 |--------|----------------|
-| M1 | Data + Federated Learning + Deployment Scenario |
-| M2 | Differential Privacy + Evaluation + Dashboard |
-| M3 | TEE + SGX + Attestation + Kubernetes + Security |
+| Member 1 | Data + Federated Learning + Deployment Scenario |
+| Member 2 | Differential Privacy + Evaluation + Dashboard |
+| Member 3 | TEE + SGX + Attestation + Kubernetes + Security |
 
 ---
 
 ## Hardware
 
-- **CPU:** Intel Core i7-1355U
+- **CPU:** Intel Core i7-10610U
 - **SGX:** gramine-direct mode (WSL2 Ubuntu 22.04)
 - **Duration:** 6 weeks
 

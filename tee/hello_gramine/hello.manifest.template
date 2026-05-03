@@ -1,0 +1,56 @@
+# Gramine manifest — Hello World
+# IntelliClave TEE | Gramine 1.9 | gramine-direct (WSL2)
+
+[loader]
+entrypoint = "file:{{ gramine.libos }}"
+log_level = "error"
+argv = ["python3", "hello.py"]
+insecure__use_host_env = false
+
+[loader.env]
+LD_LIBRARY_PATH = "/lib:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu"
+PATH = "/usr/bin:/bin"
+HOME = "/tmp"
+
+[[fs.mounts]]
+path = "/lib"
+uri = "file:{{ gramine.runtimedir() }}"
+
+[[fs.mounts]]
+path = "/lib/x86_64-linux-gnu"
+uri = "file:/lib/x86_64-linux-gnu"
+
+[[fs.mounts]]
+path = "/usr/lib/x86_64-linux-gnu"
+uri = "file:/usr/lib/x86_64-linux-gnu"
+
+[[fs.mounts]]
+path = "/usr/bin/python3.12"
+uri = "file:/usr/bin/python3.12"
+
+[[fs.mounts]]
+path = "/usr/lib/python3.12"
+uri = "file:/usr/lib/python3.12"
+
+[[fs.mounts]]
+path = "/usr/lib/python3"
+uri = "file:/usr/lib/python3"
+
+[[fs.mounts]]
+path = "/usr/local/lib/python3.12"
+uri = "file:/usr/local/lib/python3.12"
+
+[[fs.mounts]]
+path = "/hello.py"
+uri = "file:hello.py"
+
+[[fs.mounts]]
+type = "tmpfs"
+path = "/tmp"
+
+[sys]
+enable_sigterm_injection = true
+
+[sgx]
+debug = true
+edmm_enable = false

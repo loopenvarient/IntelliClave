@@ -1,7 +1,7 @@
 # privacy/validate_model.py
 from opacus.validators import ModuleValidator
 
-def validate_m1_model(model):
+def validate_model(model):
     errors = ModuleValidator.validate(model, strict=False)
     if errors:
         print("❌ Model has Opacus incompatibilities:")
@@ -11,7 +11,7 @@ def validate_m1_model(model):
         model = ModuleValidator.fix(model)
         errors_after = ModuleValidator.validate(model, strict=False)
         if errors_after:
-            print("❌ Auto-fix failed. Tell M1 to replace BatchNorm with GroupNorm.")
+            print("❌ Auto-fix failed. Replace BatchNorm with GroupNorm.")
         else:
             print("✅ Auto-fix succeeded. Use this fixed model.")
     else:

@@ -2,8 +2,50 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: fl-network-policy
+  namespace: intelliclave
 spec:
+  # Apply to ALL pods in the intelliclave namespace
   podSelector: {}
   policyTypes:
-  - Ingress
-  - Egress
+    - Ingress
+    - Egress
+
+  ingress:
+    # FL clients → FL server on port 8080 (Flower gRPC)
+    - from:
+        - podSelector:
+            matchLabels:
+              role: fl-client
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Dashboard frontend → Dashboard backend on port 8001
+    - from:
+        - podSelector:
+            matchLabels:
+              role: dashboard
+      ports:
+        - protocol: TCP
+          port: 8001
+
+  egress:
+    # FL clients may only talk to the FL server
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fl-server
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # All pods may use DNS (kube-dns)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

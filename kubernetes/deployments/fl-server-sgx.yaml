@@ -1,0 +1,119 @@
+# ── FL Server — SGX Pod (production) ─────────────────────────────────────────
+# Uses Intel SGX device plugin to mount /dev/sgx_enclave and /dev/sgx_provision.
+# Requires: intel/intel-device-plugins-sgx installed in the cluster.
+#
+# Cold start sequence:
+#   1. Init container runs attestation (generates quote, writes attestation.json)
+#   2. Main container starts FL server inside gramine-sgx
+#   3. Clients read attestation.json from shared PVC before connecting
+#
+# gramine-direct fallback (WSL2 / no SGX hardware):
+#   Remove the sgx resource requests and change CMD to use gramine-direct.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fl-server-sgx
+  namespace: intelliclave
+  labels:
+    app: fl-server
+    role: fl-server
+    tee: gramine-sgx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fl-server
+  template:
+    metadata:
+      labels:
+        app: fl-server
+        role: fl-server
+        tee: gramine-sgx
+    spec:
+      # ── Init container: run attestation before FL server starts ─────────────
+      initContainers:
+      - name: attest
+        image: intelliclave-server:latest
+        imagePullPolicy: IfNotPresent
+        command:
+          - python3
+          - tee/attestation/attestation_integration.py
+        resources:
+          limits:
+            sgx.intel.com/enclave:    "1"
+            sgx.intel.com/provision:  "1"
+        volumeMounts:
+        - name: server-results
+          mountPath: /app/results
+        - name: tee-files
+          mountPath: /app/tee
+        - name: crypto-keys
+          mountPath: /app/crypto/certs/keys
+          readOnly: true
+
+      # ── Main container: FL server inside gramine-sgx ─────────────────────────
+      containers:
+      - name: fl-server
+        image: intelliclave-server:latest
+        imagePullPolicy: IfNotPresent
+        command:
+          - gramine-sgx
+          - python3
+          - fl/run_server.py
+          - --rounds
+          - "$(ROUNDS)"
+          - --min-clients
+          - "3"
+          - --address
+          - "0.0.0.0:8080"
+          - --crypto
+        ports:
+        - containerPort: 8080
+          name: grpc
+        env:
+        - name: ROUNDS
+          value: "5"
+        - name: OMP_NUM_THREADS
+          value: "1"
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "2Gi"
+            sgx.intel.com/enclave:    "1"
+            sgx.intel.com/provision:  "1"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+            sgx.intel.com/enclave:    "1"
+            sgx.intel.com/provision:  "1"
+        volumeMounts:
+        - name: server-results
+          mountPath: /app/results
+        - name: crypto-keys
+          mountPath: /app/crypto/certs/keys
+          readOnly: true
+        - name: tee-files
+          mountPath: /app/tee
+        - name: sgx-device
+          mountPath: /dev/sgx_enclave
+        - name: sgx-provision
+          mountPath: /dev/sgx_provision
+
+      volumes:
+      - name: server-results
+        persistentVolumeClaim:
+          claimName: fl-server-pvc
+      - name: crypto-keys
+        secret:
+          secretName: fl-crypto-keys
+      - name: tee-files
+        emptyDir: {}
+      - name: sgx-device
+        hostPath:
+          path: /dev/sgx_enclave
+          type: CharDevice
+      - name: sgx-provision
+        hostPath:
+          path: /dev/sgx_provision
+          type: CharDevice

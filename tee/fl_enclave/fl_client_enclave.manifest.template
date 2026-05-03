@@ -1,0 +1,136 @@
+# ── Gramine manifest — IntelliClave FL Client (full enclave workload) ─────────
+# IntelliClave TEE | Gramine 1.9 | gramine-direct (WSL2) / gramine-sgx (prod)
+#
+# This is the production manifest. It runs the actual FL client (fl/fl_client.py)
+# with DP-SGD and crypto layer inside the enclave.
+#
+# Build:
+#   cd tee/fl_enclave
+#   gramine-manifest fl_client_enclave.manifest.template fl_client_enclave.manifest
+#
+# Run (gramine-direct):
+#   gramine-direct python3 ../../fl/fl_client.py \
+#     --csv ../../data/processed/client1.csv \
+#     --id 1 --dp --epsilon 10.0 --rounds 5
+#
+# Run (gramine-sgx, production):
+#   gramine-sgx python3 ../../fl/fl_client.py \
+#     --csv ../../data/processed/client1.csv \
+#     --id 1 --dp --epsilon 10.0 --rounds 5
+
+[loader]
+entrypoint = "file:{{ gramine.libos }}"
+log_level = "error"
+argv = ["python3"]
+insecure__use_host_env = false
+
+[loader.env]
+LD_LIBRARY_PATH = "/lib:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/usr/local/lib"
+PATH            = "/usr/bin:/bin"
+HOME            = "/tmp"
+OMP_NUM_THREADS = "1"
+# Flower gRPC server address — override at runtime
+SERVER_ADDR     = { passthrough = true }
+
+# ── Gramine runtime ───────────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/lib"
+uri  = "file:{{ gramine.runtimedir() }}"
+
+# ── System libraries ──────────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/lib/x86_64-linux-gnu"
+uri  = "file:/lib/x86_64-linux-gnu"
+
+[[fs.mounts]]
+path = "/usr/lib/x86_64-linux-gnu"
+uri  = "file:/usr/lib/x86_64-linux-gnu"
+
+# ── Python interpreter ────────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/usr/bin/python3.12"
+uri  = "file:/usr/bin/python3.12"
+
+[[fs.mounts]]
+path = "/usr/lib/python3.12"
+uri  = "file:/usr/lib/python3.12"
+
+[[fs.mounts]]
+path = "/usr/lib/python3"
+uri  = "file:/usr/lib/python3"
+
+[[fs.mounts]]
+path = "/usr/local/lib/python3.12"
+uri  = "file:/usr/local/lib/python3.12"
+
+# ── pip packages: torch, flwr, opacus, cryptography, sklearn ─────────────────
+[[fs.mounts]]
+path = "/usr/local/lib"
+uri  = "file:/usr/local/lib"
+
+# ── Project source (read-only inside enclave) ─────────────────────────────────
+[[fs.mounts]]
+path = "/fl"
+uri  = "file:../../fl"
+
+[[fs.mounts]]
+path = "/crypto"
+uri  = "file:../../crypto"
+
+[[fs.mounts]]
+path = "/data/class_weights.json"
+uri  = "file:../../data/class_weights.json"
+
+# ── Client CSV (mounted read-only — raw data never leaves this mount) ─────────
+[[fs.mounts]]
+path = "/data/processed"
+uri  = "file:../../data/processed"
+
+# ── Crypto keys (server public key only — private key stays on server) ────────
+[[fs.mounts]]
+path = "/crypto/certs/keys"
+uri  = "file:../../crypto/certs/keys"
+
+# ── Results output (writable — client writes nothing sensitive here) ──────────
+[[fs.mounts]]
+path = "/results"
+uri  = "file:../../results"
+
+# ── System files needed by torch/grpc ────────────────────────────────────────
+[[fs.mounts]]
+path = "/etc/ssl"
+uri  = "file:/etc/ssl"
+
+[[fs.mounts]]
+path = "/etc/resolv.conf"
+uri  = "file:/etc/resolv.conf"
+
+[[fs.mounts]]
+path = "/etc/hosts"
+uri  = "file:/etc/hosts"
+
+# ── Temp + proc ───────────────────────────────────────────────────────────────
+[[fs.mounts]]
+type = "tmpfs"
+path = "/tmp"
+
+[[fs.mounts]]
+type = "proc"
+path = "/proc"
+
+# ── Network (needed for Flower gRPC to server) ────────────────────────────────
+[sys]
+enable_sigterm_injection = true
+
+[loader.insecure__use_cmdline_argv]
+# Allow passing --csv, --id, --dp, --epsilon, --rounds at runtime
+enabled = true
+
+# ── SGX-specific settings (ignored in gramine-direct mode) ───────────────────
+[sgx]
+debug            = false
+edmm_enable      = false
+# enclave_size must be large enough for torch model + opacus buffers
+enclave_size     = "2G"
+max_threads      = 16
+# remote_attestation = "dcap"  # uncomment for production SGX

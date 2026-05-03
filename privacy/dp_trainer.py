@@ -9,7 +9,7 @@ class DPTrainer:
     def __init__(self, model, target_epsilon=10.0, target_delta=None,
                  max_grad_norm=1.0, epochs=3):
         """
-        model          : M1's MLP — passed in, not defined here
+        model : MLP — passed in, not defined here
         target_epsilon : privacy budget (we use 10.0 as default)
         target_delta   : set per-client based on their row count
         max_grad_norm  : gradient clipping threshold
@@ -26,7 +26,7 @@ class DPTrainer:
         self.max_grad_norm = max_grad_norm
         self.epochs = epochs
 
-        # Load class weights from M1's file
+        # Load class weights
         import json
         with open("data/class_weights.json") as f:
             weights_dict = json.load(f)

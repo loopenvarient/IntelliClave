@@ -1,49 +1,68 @@
+# ── IntelliClave FL Client ────────────────────────────────────────────────────
+# Runs: fl/run_client.py (Flower client + DP-SGD + crypto layer)
+#
+# Build:
+#   docker build -f docker/Dockerfile.client -t intelliclave-client:latest .
+# Run (example — client 1):
+#   docker run \
+#     -e CLIENT_ID=1 \
+#     -e SERVER_ADDR=fl-server:8080 \
+#     -e CSV_PATH=/app/data/processed/client1.csv \
+#     -e USE_DP=--dp \
+#     -e EPSILON=10.0 \
+#     -e ROUNDS=10 \
+#     -v $(pwd)/data/processed/client1.csv:/app/data/processed/client1.csv:ro \
+#     intelliclave-client:latest
+
 FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system deps
+# ── System dependencies ───────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python deps
+# ── Python dependencies (pinned, layer-cached) ───────────────────────────────
+# torch 2.2.2 is the oldest version available for linux/amd64 on PyPI
+# opacus 1.4.0 requires torch >= 2.0
 RUN pip install --no-cache-dir \
-    flwr==1.6.0 \
-    torch==2.1.0 \
+    torch==2.2.2 \
     numpy==1.24.3 \
     pandas==2.0.3 \
     scikit-learn==1.3.2 \
-    cryptography==41.0.7 \
-    opacus==1.4.0
+    flwr==1.6.0 \
+    opacus==1.4.0 \
+    cryptography==41.0.7
 
-# Copy project source
-COPY fl/           ./fl/
-COPY crypto/       ./crypto/
-COPY data/class_weights.json ./data/class_weights.json
+# ── Project source ────────────────────────────────────────────────────────────
+COPY fl/                         ./fl/
+COPY crypto/                     ./crypto/
+COPY data/class_weights.json     ./data/class_weights.json
 
-# CLIENT_ID  : 1, 2, or 3  (set at runtime)
-# SERVER_ADDR: fl-server:8080 in K8s, 127.0.0.1:8080 locally
-# CSV_PATH   : path to the client's processed CSV (mounted via volume)
-# USE_CRYPTO : --crypto flag (set to "--crypto" to enable, "" to disable)
-# USE_DP     : --dp flag (set to "--dp" to enable, "" to disable)
-# EPSILON    : DP epsilon target (default 10.0)
-# ROUNDS     : must match server --rounds
+# ── Runtime environment variables ────────────────────────────────────────────
+# CLIENT_ID  : 1, 2, or 3
+# SERVER_ADDR: fl-server:8080 (Docker/K8s) or 127.0.0.1:8080 (local)
+# CSV_PATH   : mounted at runtime via volume
+# USE_CRYPTO : "--crypto" to enable AES-256-GCM weight encryption, "" to disable
+# USE_DP     : "--dp" to enable DP-SGD, "" to disable
+# EPSILON    : DP privacy budget target (default 10.0)
+# ROUNDS     : must match server --rounds exactly (Opacus needs total epochs upfront)
 
 ENV CLIENT_ID=1
 ENV SERVER_ADDR=fl-server:8080
 ENV CSV_PATH=/app/data/processed/client1.csv
-ENV USE_CRYPTO=""
-ENV USE_DP=""
+ENV USE_CRYPTO=--crypto
+ENV USE_DP=--dp
 ENV EPSILON=10.0
 ENV ROUNDS=10
 
-CMD ["sh", "-c", \
-    "python fl/run_client.py \
-        --id $CLIENT_ID \
-        --csv $CSV_PATH \
-        --server $SERVER_ADDR \
-        $USE_CRYPTO \
-        $USE_DP \
-        --epsilon $EPSILON \
-        --rounds $ROUNDS"]
+CMD sh -c "python fl/run_client.py \
+    --id ${CLIENT_ID} \
+    --csv ${CSV_PATH} \
+    --server ${SERVER_ADDR} \
+    ${USE_CRYPTO} \
+    ${USE_DP} \
+    --epsilon ${EPSILON} \
+    --rounds ${ROUNDS}"

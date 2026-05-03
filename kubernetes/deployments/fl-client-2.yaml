@@ -2,6 +2,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: fl-client-2
+  namespace: intelliclave
+  labels:
+    app: fl-client-2
+    role: fl-client
 spec:
   replicas: 1
   selector:
@@ -11,10 +15,12 @@ spec:
     metadata:
       labels:
         app: fl-client-2
+        role: fl-client
     spec:
       containers:
       - name: fl-client-2
         image: fl-client-image:latest
+        imagePullPolicy: IfNotPresent
         env:
         - name: CLIENT_ID
           value: "2"
@@ -25,11 +31,18 @@ spec:
         - name: USE_CRYPTO
           value: "--crypto"
         - name: USE_DP
-          value: ""
+          value: "--dp"
         - name: EPSILON
           value: "10.0"
         - name: ROUNDS
           value: "10"
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1"
+            memory: "1Gi"
         volumeMounts:
         - name: client-data
           mountPath: /app/data/processed

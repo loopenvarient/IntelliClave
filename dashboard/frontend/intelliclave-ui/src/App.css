@@ -274,3 +274,28 @@ body {
 
 @media (max-width: 1200px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 900px)  { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+/* ── Attestation panel ────────────────────────────────────────────────────── */
+.att-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0 6px;
+}
+.att-icon {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.att-label {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+/* ── Privacy budget note ──────────────────────────────────────────────────── */
+.budget-note {
+  color: var(--green);
+  font-size: 0.72rem;
+  margin-left: 6px;
+}

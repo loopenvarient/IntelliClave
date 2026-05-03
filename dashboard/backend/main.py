@@ -78,7 +78,7 @@ class PredictRequest(BaseModel):
 class PredictResponse(BaseModel):
     predicted_class: int
     predicted_label: str
-    confidence: float = None       # only populated if return_confidence=True
+    confidence: float | None = None    # only populated if return_confidence=True
 # ─────────────────────────────────────────────────────────────────────────────
 
 

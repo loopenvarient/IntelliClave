@@ -4,8 +4,8 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 # Confirmed from contracts: 50 features, labels 1–6
-FEATURE_COLS = [f"V{i}" for i in range(1, 51)]  # confirm column names with M1
-LABEL_COL = "activity"  # confirm this name with M1
+FEATURE_COLS = [f"V{i}" for i in range(1, 51)]
+LABEL_COL = "activity"
 BATCH_SIZE = 64
 
 def load_client_data(csv_path, client_delta_n):

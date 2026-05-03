@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from data_utils import get_default_client_csvs, infer_csv_schema  # noqa: E402
 from model import get_model  # noqa: E402
 
-# ── M1 (crypto): import crypto context ───────────────────────────────────────
+# ── Crypto layer import ───────────────────────────────────────────────────────
 _CRYPTO_DIR = os.path.join(os.path.dirname(__file__), "..", "crypto", "certs")
 sys.path.insert(0, os.path.abspath(_CRYPTO_DIR))
 try:
@@ -34,9 +34,7 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         input_dim: int,
         num_classes: int = 6,
         save_dir: str = "results/fl_rounds",
-        # ── M1 (crypto): optional server-side crypto context ─────────────────────
         crypto_ctx: "CryptoContext" = None,
-        # ─────────────────────────────────────────────────────────────────────────
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -44,20 +42,16 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         self.num_classes = num_classes
         self.save_dir = save_dir
         self.round_log: List[Dict] = []
-        # ── M2: separate log for privacy metrics ─────────────────────────────────
         self.privacy_log: List[Dict] = []
-        # ─────────────────────────────────────────────────────────────────────────
-        # ── M1 (crypto) ──────────────────────────────────────────────────────────
         self._crypto_ctx = crypto_ctx
         self.use_crypto = crypto_ctx is not None
         if self.use_crypto:
             print("[Server][Crypto] Encryption enabled — will decrypt client weights "
                   "before aggregation.")
-        # ─────────────────────────────────────────────────────────────────────────
         os.makedirs(save_dir, exist_ok=True)
 
     def aggregate_fit(self, server_round, results, failures):
-        # ── M1 (crypto): decrypt client weights before FedAvg aggregation ────────
+        # Decrypt client weights before FedAvg aggregation if crypto is enabled
         if self.use_crypto and self._crypto_ctx is not None:
             decrypted_results = []
             for client_proxy, fit_res in results:
@@ -67,7 +61,6 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
                     if len(raw_arrays) == 1 and raw_arrays[0].dtype == np.uint8:
                         payload = json.loads(raw_arrays[0].tobytes().decode())
                         plain_weights = self._crypto_ctx.decrypt_weights(payload)
-                        # flwr 1.6 FitRes is a dataclass — rebuild it directly
                         from flwr.common import FitRes as _FitRes
                         fit_res = _FitRes(
                             status=fit_res.status,
@@ -80,19 +73,17 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
                 except Exception as e:
                     print(f"[Server][Crypto] ERROR: decryption failed "
                           f"({type(e).__name__}: {e})")
-                    raise  # don't silently continue with broken weights
+                    raise
                 decrypted_results.append((client_proxy, fit_res))
             results = decrypted_results
-        # ─────────────────────────────────────────────────────────────────────────
 
-        # M1 original aggregation — untouched
         aggregated, metrics = super().aggregate_fit(server_round, results, failures)
         if aggregated is not None:
             weights = fl.common.parameters_to_ndarrays(aggregated)
             np.savez(os.path.join(self.save_dir, f"round_{server_round}.npz"), *weights)
             self._save_pth(weights, server_round)
 
-        # ── M2: extract epsilon from client fit metrics and save to privacy log ──
+        # Extract epsilon from client fit metrics and save to privacy log
         epsilons = []
         for _, fit_res in results:
             if hasattr(fit_res, "metrics") and fit_res.metrics:
@@ -118,14 +109,12 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
             with open(privacy_path, "w") as f:
                 json.dump(self.privacy_log, f, indent=2)
             print(
-                f"[Server][M2-DP] Round {server_round} "
+                f"[Server][DP] Round {server_round} "
                 f"avg_ε={avg_eps:.4f} — saved to fl_privacy.json"
             )
-        # ─────────────────────────────────────────────────────────────────────────
 
         return aggregated, metrics
 
-    # M1 original aggregate_evaluate — untouched
     def aggregate_evaluate(self, server_round, results, failures):
         loss, metrics = super().aggregate_evaluate(server_round, results, failures)
         entry = {
@@ -142,7 +131,6 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         print(f"[Server] Round {server_round} {entry}")
         return loss, metrics
 
-    # M1 original _save_pth — untouched
     def _save_pth(self, weights: List[np.ndarray], round_number: int):
         model = get_model(self.input_dim, self.num_classes)
         state_dict = {
@@ -157,7 +145,6 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         torch.save(model.state_dict(), latest_path)
 
 
-# M1 original weighted_average — untouched
 def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
     total_examples = sum(num_examples for num_examples, _ in metrics)
     if total_examples == 0:
@@ -172,14 +159,12 @@ def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
     return aggregated
 
 
-# M1 original infer_default_input_dim — untouched
 def infer_default_input_dim() -> int:
     first_csv = get_default_client_csvs()[0]
     input_dim, _ = infer_csv_schema(first_csv)
     return input_dim
 
 
-# M1 original start_server — untouched
 def start_server(
     input_dim: int,
     num_rounds: int = 10,
@@ -187,11 +172,8 @@ def start_server(
     local_epochs: int = 3,
     server_address: str = "0.0.0.0:8080",
     save_dir: str = "results/fl_rounds",
-    # ── M1 (crypto): optional crypto context ─────────────────────────────────
     use_crypto: bool = False,
-    # ─────────────────────────────────────────────────────────────────────────
 ):
-    # ── M1 (crypto): initialise keypair if requested ──────────────────────────
     crypto_ctx = None
     if use_crypto and _CRYPTO_AVAILABLE:
         crypto_ctx = CryptoContext.load_or_create()
@@ -199,15 +181,12 @@ def start_server(
               f"crypto/certs/keys/server_public.pem — share with clients.")
     elif use_crypto:
         print("[Server][Crypto] WARNING: crypto unavailable — starting without encryption.")
-    # ─────────────────────────────────────────────────────────────────────────
 
     strategy = SaveModelStrategy(
         input_dim=input_dim,
         num_classes=6,
         save_dir=save_dir,
-        # ── M1 (crypto) ───────────────────────────────────────────────────────
         crypto_ctx=crypto_ctx,
-        # ─────────────────────────────────────────────────────────────────────
         fraction_fit=1.0,
         fraction_evaluate=1.0,
         min_fit_clients=min_clients,
@@ -226,20 +205,17 @@ def start_server(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    # M1 original arguments — untouched
     parser.add_argument("--input-dim", type=int, default=infer_default_input_dim())
     parser.add_argument("--rounds", type=int, default=10)
     parser.add_argument("--min-clients", type=int, default=3)
     parser.add_argument("--local-epochs", type=int, default=3)
     parser.add_argument("--address", default="0.0.0.0:8080")
     parser.add_argument("--save-dir", default="results/fl_rounds")
-    # ── M1 (crypto) ───────────────────────────────────────────────────────────
     parser.add_argument(
         "--crypto",
         action="store_true",
-        help="[Crypto] Enable AES-256-GCM + RSA weight encryption.",
+        help="Enable AES-256-GCM + RSA weight encryption.",
     )
-    # ─────────────────────────────────────────────────────────────────────────
     args = parser.parse_args()
     start_server(
         input_dim=args.input_dim,

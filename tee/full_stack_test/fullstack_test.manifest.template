@@ -1,0 +1,86 @@
+# Gramine manifest — Full Stack Test (torch + flwr + opacus)
+# IntelliClave TEE | Gramine 1.9 | gramine-direct (WSL2)
+# Confirms the entire FL+DP pipeline can run inside the enclave
+
+[loader]
+entrypoint = "file:{{ gramine.libos }}"
+log_level = "error"
+argv = ["python3", "fullstack_test.py"]
+insecure__use_host_env = false
+
+[loader.env]
+LD_LIBRARY_PATH = "/lib:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/usr/local/lib"
+PATH = "/usr/bin:/bin"
+HOME = "/tmp"
+# Opacus uses multiprocessing — disable to avoid fork issues inside enclave
+OMP_NUM_THREADS = "1"
+
+# ── Gramine runtime ───────────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/lib"
+uri = "file:{{ gramine.runtimedir() }}"
+
+# ── System libraries ──────────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/lib/x86_64-linux-gnu"
+uri = "file:/lib/x86_64-linux-gnu"
+
+[[fs.mounts]]
+path = "/usr/lib/x86_64-linux-gnu"
+uri = "file:/usr/lib/x86_64-linux-gnu"
+
+[[fs.mounts]]
+path = "/usr/lib/x86_64-linux-gnu/openblas-pthread"
+uri = "file:/usr/lib/x86_64-linux-gnu/openblas-pthread"
+
+# ── Python interpreter ────────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/usr/bin/python3.12"
+uri = "file:/usr/bin/python3.12"
+
+[[fs.mounts]]
+path = "/usr/lib/python3.12"
+uri = "file:/usr/lib/python3.12"
+
+[[fs.mounts]]
+path = "/usr/lib/python3"
+uri = "file:/usr/lib/python3"
+
+[[fs.mounts]]
+path = "/usr/local/lib/python3.12"
+uri = "file:/usr/local/lib/python3.12"
+
+# ── pip-installed packages (torch, flwr, opacus, etc.) ───────────────────────
+[[fs.mounts]]
+path = "/usr/local/lib"
+uri = "file:/usr/local/lib"
+
+# ── /etc needed by some torch internals ──────────────────────────────────────
+[[fs.mounts]]
+path = "/etc/ssl"
+uri = "file:/etc/ssl"
+
+[[fs.mounts]]
+path = "/etc/resolv.conf"
+uri = "file:/etc/resolv.conf"
+
+# ── Test script ───────────────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/fullstack_test.py"
+uri = "file:fullstack_test.py"
+
+# ── Temp + proc ───────────────────────────────────────────────────────────────
+[[fs.mounts]]
+type = "tmpfs"
+path = "/tmp"
+
+[[fs.mounts]]
+type = "proc"
+path = "/proc"
+
+[sys]
+enable_sigterm_injection = true
+
+[sgx]
+debug = true
+edmm_enable = false

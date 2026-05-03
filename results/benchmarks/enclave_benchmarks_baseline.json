@@ -1,0 +1,29 @@
+{
+  "mode": "baseline",
+  "n_runs": 10,
+  "batch_inf": 100,
+  "batch_train": 32,
+  "results": {
+    "model_inference": {
+      "mean_ms": 0.414,
+      "std_ms": 0.493
+    },
+    "training_step": {
+      "mean_ms": 2.617,
+      "std_ms": 1.266
+    },
+    "aes_encrypt": {
+      "mean_ms": 1.452,
+      "std_ms": 0.307
+    },
+    "aes_decrypt": {
+      "mean_ms": 4.775,
+      "std_ms": 2.818
+    },
+    "model_save": {
+      "mean_ms": 2.759,
+      "std_ms": 1.675
+    }
+  },
+  "note": ""
+}

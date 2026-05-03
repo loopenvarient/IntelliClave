@@ -37,12 +37,12 @@ _THIS_DIR    = os.path.dirname(os.path.abspath(__file__))
 _PROJECT_ROOT = os.path.abspath(os.path.join(_THIS_DIR, '..'))
 _FL_DIR      = os.path.join(_PROJECT_ROOT, 'fl')
 
-sys.path.insert(0, _FL_DIR)       # for M1's model.py and data_utils.py
+sys.path.insert(0, _FL_DIR)       # for model.py and data_utils.py
 sys.path.insert(0, _THIS_DIR)     # for dp_trainer.py
 
-from model import get_model                            # M1's model
-from data_utils import load_class_weights              # M1's class weights loader
-from dp_trainer import DPTrainer                       # M2's DP wrapper
+from model import get_model                            # HARClassifier
+from data_utils import load_class_weights              # class weights loader
+from dp_trainer import DPTrainer                       # DP wrapper
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Config ───────────────────────────────────────────────────────────────────
@@ -73,13 +73,13 @@ PLOT_DIR    = os.path.join(_PROJECT_ROOT, 'results', 'plots')
 # ── Data loader using real HAR CSV ───────────────────────────────────────────
 def load_har_data(csv_path: str, batch_size: int = 64, test_split: float = 0.2):
     """
-    Loads a real client CSV, applies StandardScaler (matching M1's data_utils),
+    Loads a real client CSV, applies StandardScaler (matching data_utils),
     converts labels 1-6 → 0-5, returns train_loader, test_loader, n_train, n_features.
     """
     if not os.path.exists(csv_path):
         raise FileNotFoundError(
             f"\n❌ CSV not found: {csv_path}"
-            f"\n   Make sure M1's processed CSVs are in data/processed/"
+            f"\n   Make sure processed CSVs are in data/processed/"
         )
 
     df = pd.read_csv(csv_path).dropna()
@@ -88,13 +88,13 @@ def load_har_data(csv_path: str, batch_size: int = 64, test_split: float = 0.2):
     X = df[feature_cols].values.astype(np.float32)
     y = df[LABEL_COL].values.astype(np.int64) - 1  # 1-6 → 0-5
 
-    # Train/test split (same as M1's data_utils: 80/20, stratified)
+    # Train/test split (80/20, stratified)
     from sklearn.model_selection import train_test_split
     X_tr, X_te, y_tr, y_te = train_test_split(
         X, y, test_size=test_split, random_state=42, stratify=y
     )
 
-    # StandardScaler — matches M1's pipeline exactly
+    # StandardScaler — matches the FL pipeline
     scaler = StandardScaler()
     X_tr = scaler.fit_transform(X_tr)
     X_te = scaler.transform(X_te)
@@ -127,7 +127,7 @@ def evaluate(model, loader):
     return correct / total if total > 0 else 0.0
 
 
-# ── Load class weights from M1 ────────────────────────────────────────────────
+# ── Load class weights ────────────────────────────────────────────────────────
 def get_criterion():
     weights = load_class_weights()  # returns tensor or None
     return nn.CrossEntropyLoss(weight=weights)
