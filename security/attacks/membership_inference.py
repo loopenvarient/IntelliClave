@@ -43,10 +43,12 @@ sys.path.insert(0, os.path.join(_ROOT, "fl"))
 from model import get_model          # noqa: E402
 from data_utils import ACTIVITY_NAMES  # noqa: E402
 
-MODEL_PATH  = os.path.join(_ROOT, "results", "fl_rounds", "global_model_latest.pth")
-CLIENT_CSVS = [os.path.join(_ROOT, "data", "processed", f"client{i}.csv")
-               for i in range(1, 4)]
-OUT_PATH    = os.path.join(_ROOT, "results", "attacks", "membership_inference.json")
+MODEL_PATH     = os.path.join(_ROOT, "results", "fl_rounds", "global_model_latest.pth")
+MODEL_PATH_DP  = os.path.join(_ROOT, "results", "fl_rounds", "global_model_latest.pth")  # same checkpoint — DP run overwrites latest
+CLIENT_CSVS    = [os.path.join(_ROOT, "data", "processed", f"client{i}.csv")
+                  for i in range(1, 4)]
+OUT_PATH       = os.path.join(_ROOT, "results", "attacks", "membership_inference.json")
+OUT_PATH_NODP  = os.path.join(_ROOT, "results", "attacks", "membership_inference_nodp.json")
 INPUT_DIM   = 50
 N_CLASSES   = 6
 LABEL_COL   = "label"
@@ -56,7 +58,7 @@ RANDOM_SEED = 42
 
 def load_model():
     model = get_model(INPUT_DIM, N_CLASSES)
-    state = torch.load(MODEL_PATH, map_location="cpu")
+    state = torch.load(MODEL_PATH, map_location="cpu", weights_only=True)
     model.load_state_dict(state)
     model.eval()
     return model
@@ -103,9 +105,13 @@ def threshold_attack(member_conf, nonmember_conf):
     }
 
 
-def main():
+def main(out_path: str = OUT_PATH, dp_mode: bool = False):
     print("=" * 55)
     print("Attack 2: Membership Inference")
+    if dp_mode:
+        print("Mode: DP-trained model")
+    else:
+        print("Mode: No-DP model (baseline)")
     print("=" * 55)
 
     model = load_model()
@@ -183,11 +189,12 @@ def main():
 
     output = {
         "attack":  "membership_inference",
+        "mode":    "dp" if dp_mode else "no_dp",
         "results": all_results,
         "summary": summary,
     }
-    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
-    with open(OUT_PATH, "w") as f:
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w") as f:
         json.dump(output, f, indent=2)
 
     print(f"\n{'='*55}")
@@ -196,8 +203,16 @@ def main():
     print(f"  Avg conf gap : {avg_gap:.4f}")
     print(f"  Verdict : {summary['verdict']}")
     print(f"{'='*55}")
-    print(f"\n✅ Saved → {OUT_PATH}")
+    print(f"\n✅ Saved → {out_path}")
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dp", action="store_true",
+                        help="Tag results as DP-trained model run (saves to _nodp.json when not set).")
+    args = parser.parse_args()
+
+    # Route output: no --dp flag → _nodp.json, --dp flag → .json (canonical DP result)
+    out_path = OUT_PATH if args.dp else OUT_PATH_NODP
+    main(out_path=out_path, dp_mode=args.dp)

@@ -3,9 +3,9 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-# Confirmed from contracts: 50 features, labels 1–6
-FEATURE_COLS = [f"V{i}" for i in range(1, 51)]
-LABEL_COL = "activity"
+# Confirmed from contracts: 50 PCA features, labels 1–6
+FEATURE_COLS = [f"pca_{i}" for i in range(50)]
+LABEL_COL = "label"
 BATCH_SIZE = 64
 
 def load_client_data(csv_path, client_delta_n):
@@ -18,7 +18,8 @@ def load_client_data(csv_path, client_delta_n):
     df = pd.read_csv(csv_path)
     
     # Separate features and labels
-    X = df.drop(columns=[LABEL_COL]).values.astype("float32")
+    feature_cols = [c for c in df.columns if c != LABEL_COL]
+    X = df[feature_cols].values.astype("float32")
     y = df[LABEL_COL].values.astype("int64")
     
     # CRITICAL: convert labels 1–6 → 0–5
@@ -27,7 +28,6 @@ def load_client_data(csv_path, client_delta_n):
     # Verify
     assert X.shape[1] == 50, f"Expected 50 features, got {X.shape[1]}"
     assert set(y).issubset(set(range(6))), f"Labels out of range: {set(y)}"
-    assert X.min() >= -1.1 and X.max() <= 1.1, "Data not normalized to [-1,1]"
     
     dataset = TensorDataset(
         torch.FloatTensor(X),

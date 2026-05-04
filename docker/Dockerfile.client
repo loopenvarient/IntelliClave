@@ -28,7 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # torch 2.2.2 is the oldest version available for linux/amd64 on PyPI
 # opacus 1.4.0 requires torch >= 2.0
 RUN pip install --no-cache-dir \
-    torch==2.2.2 \
+    torch==2.1.0 \
     numpy==1.24.3 \
     pandas==2.0.3 \
     scikit-learn==1.3.2 \

@@ -5,6 +5,16 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from fl_server import infer_default_input_dim, start_server  # noqa: E402
 
+# ── Attestation import ────────────────────────────────────────────────────────
+_TEE_DIR = os.path.join(os.path.dirname(__file__), "..", "tee", "attestation")
+sys.path.insert(0, os.path.abspath(_TEE_DIR))
+try:
+    from attestation_integration import AttestationServer  # noqa: E402
+    _ATTESTATION_AVAILABLE = True
+except ImportError:
+    _ATTESTATION_AVAILABLE = False
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the IntelliClave Flower server.")
@@ -16,7 +26,17 @@ if __name__ == "__main__":
     parser.add_argument("--save-dir", default="results/fl_rounds")
     parser.add_argument("--crypto", action="store_true",
                         help="Enable AES-256-GCM + RSA weight encryption.")
+    parser.add_argument("--attest", action="store_true",
+                        help="Run SGX attestation before starting the FL server.")
     args = parser.parse_args()
+
+    # Run attestation before accepting any client connections
+    if args.attest:
+        if _ATTESTATION_AVAILABLE:
+            att = AttestationServer()
+            att.attest()
+        else:
+            print("[run_server] WARNING: attestation module not found — skipping.")
 
     start_server(
         input_dim=args.input_dim,

@@ -6,6 +6,16 @@ sys.path.insert(0, os.path.dirname(__file__))
 from data_utils import get_default_client_csvs  # noqa: E402
 from fl_client import start_client  # noqa: E402
 
+# ── Attestation import ────────────────────────────────────────────────────────
+_TEE_DIR = os.path.join(os.path.dirname(__file__), "..", "tee", "attestation")
+sys.path.insert(0, os.path.abspath(_TEE_DIR))
+try:
+    from attestation_integration import AttestationClient, SecurityError  # noqa: E402
+    _ATTESTATION_AVAILABLE = True
+except ImportError:
+    _ATTESTATION_AVAILABLE = False
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 if __name__ == "__main__":
     default_csvs = get_default_client_csvs()
@@ -25,7 +35,21 @@ if __name__ == "__main__":
                         help="DP target epsilon. Default=10.0.")
     parser.add_argument("--rounds", type=int, default=5,
                         help="Total FL rounds — must match server --rounds.")
+    parser.add_argument("--attest", action="store_true",
+                        help="Verify server SGX attestation before connecting.")
     args = parser.parse_args()
+
+    # Verify server attestation before connecting
+    if args.attest:
+        if _ATTESTATION_AVAILABLE:
+            try:
+                att = AttestationClient(client_id=args.id)
+                att.verify()
+            except (FileNotFoundError, SecurityError) as e:
+                print(f"[run_client] ATTESTATION FAILED: {e}")
+                raise SystemExit(1)
+        else:
+            print("[run_client] WARNING: attestation module not found — skipping.")
 
     client_index = int(args.id) - 1
     csv_path = args.csv

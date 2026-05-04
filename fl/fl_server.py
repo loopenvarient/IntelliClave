@@ -16,7 +16,16 @@ sys.path.insert(0, os.path.dirname(__file__))
 from data_utils import get_default_client_csvs, infer_csv_schema  # noqa: E402
 from model import get_model  # noqa: E402
 
-# ── Crypto layer import ───────────────────────────────────────────────────────
+# ── Sealed storage import ─────────────────────────────────────────────────────
+_SEALED_DIR = os.path.join(os.path.dirname(__file__), "..", "tee", "sealed_storage")
+sys.path.insert(0, os.path.abspath(_SEALED_DIR))
+try:
+    from sealed_storage import seal_model_checkpoint, seal_private_key  # noqa: E402
+    _SEALED_STORAGE_AVAILABLE = True
+except ImportError:
+    _SEALED_STORAGE_AVAILABLE = False
+    print("[fl_server] WARNING: sealed_storage not found — checkpoints will not be sealed.")
+# ─────────────────────────────────────────────────────────────────────────────
 _CRYPTO_DIR = os.path.join(os.path.dirname(__file__), "..", "crypto", "certs")
 sys.path.insert(0, os.path.abspath(_CRYPTO_DIR))
 try:
@@ -144,6 +153,11 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         torch.save(model.state_dict(), round_path)
         torch.save(model.state_dict(), latest_path)
 
+        # Seal checkpoints to the server enclave identity
+        if _SEALED_STORAGE_AVAILABLE:
+            seal_model_checkpoint(round_path)
+            seal_model_checkpoint(latest_path)
+
 
 def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
     total_examples = sum(num_examples for num_examples, _ in metrics)
@@ -179,6 +193,14 @@ def start_server(
         crypto_ctx = CryptoContext.load_or_create()
         print(f"[Server][Crypto] Public key ready at "
               f"crypto/certs/keys/server_public.pem — share with clients.")
+        # Seal the private key to the enclave so it can't be read outside
+        if _SEALED_STORAGE_AVAILABLE:
+            priv_pem = os.path.join(
+                os.path.dirname(__file__), "..", "crypto", "certs", "keys", "server_private.pem"
+            )
+            priv_pem = os.path.abspath(priv_pem)
+            if os.path.exists(priv_pem):
+                seal_private_key(priv_pem)
     elif use_crypto:
         print("[Server][Crypto] WARNING: crypto unavailable — starting without encryption.")
 

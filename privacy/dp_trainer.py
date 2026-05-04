@@ -1,4 +1,5 @@
 # privacy/dp_trainer.py
+import os
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -26,9 +27,11 @@ class DPTrainer:
         self.max_grad_norm = max_grad_norm
         self.epochs = epochs
 
-        # Load class weights
+        # Load class weights — resolve path relative to this file so it works
+        # regardless of the working directory the script is launched from
         import json
-        with open("data/class_weights.json") as f:
+        _root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        with open(os.path.join(_root, "data", "class_weights.json")) as f:
             weights_dict = json.load(f)
         # Order must match label order 0–5
         activity_order = ["WALKING","WALKING_UPSTAIRS","WALKING_DOWNSTAIRS",

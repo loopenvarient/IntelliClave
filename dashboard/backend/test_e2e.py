@@ -216,6 +216,34 @@ check(
 _query_log.clear()  # reset after test
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Test 12: GET /attacks → attack summaries
+# ─────────────────────────────────────────────────────────────────────────────
+r = client.get("/attacks")
+body = r.json() if r.status_code == 200 else {}
+check(
+    "GET /attacks → 200 + model_inversion + membership_inference + gradient_poisoning",
+    r.status_code == 200
+    and "model_inversion" in body
+    and "membership_inference" in body
+    and "gradient_poisoning" in body,
+    f"status={r.status_code} keys={list(body.keys())}",
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Test 13: GET /privacy_log → per-client epsilon log
+# ─────────────────────────────────────────────────────────────────────────────
+r = client.get("/privacy_log")
+body = r.json() if r.status_code == 200 else {}
+check(
+    "GET /privacy_log → 200 + list with epsilon entries",
+    r.status_code == 200
+    and isinstance(body, list)
+    and len(body) > 0
+    and "epsilon" in body[0],
+    f"status={r.status_code} entries={len(body) if isinstance(body, list) else 'N/A'}",
+)
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Summary
 # ─────────────────────────────────────────────────────────────────────────────
 print()

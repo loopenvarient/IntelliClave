@@ -13,24 +13,37 @@ CLIENT_DELTAS = {
 }
 
 class DPFlowerClient(fl.client.NumPyClient):
-    def __init__(self, client_id, model, csv_path):
+    def __init__(self, client_id, model, csv_path,
+                 local_epochs=3, num_fl_rounds=5, target_epsilon=10.0):
         """
-        client_id : "client1", "client2", or "client3"
-        model     : MLP — imported from fl/model.py
-        csv_path  : path to the frozen client CSV
+        client_id      : "client1", "client2", or "client3"
+        model          : HARClassifier — imported from fl/model.py
+        csv_path       : path to the frozen client CSV
+        local_epochs   : training epochs per FL round
+        num_fl_rounds  : total FL rounds — must match server config
+        target_epsilon : DP privacy budget
         """
         self.client_id = client_id
         delta = CLIENT_DELTAS[client_id]
         self.loader, _ = load_client_data(csv_path, delta)
 
+        # total_epochs = local_epochs × num_fl_rounds
+        # Opacus must know the full training duration upfront to calibrate
+        # noise correctly — using only local_epochs would overflow the budget
+        # after the first round in a multi-round FL run.
+        total_epochs = local_epochs * num_fl_rounds
+
         self.trainer = DPTrainer(
             model=model,
-            target_epsilon=10.0,
+            target_epsilon=target_epsilon,
             target_delta=delta,
             max_grad_norm=1.0,
-            epochs=3
+            epochs=total_epochs
         )
         self.trainer.attach(self.loader)
+        print(f"[{client_id}] PrivacyEngine attached: "
+              f"ε={target_epsilon}, δ={delta:.2e}, "
+              f"total_epochs={total_epochs} ({local_epochs} local × {num_fl_rounds} rounds)")
 
     def get_parameters(self, config):
         return [val.cpu().numpy() for val in

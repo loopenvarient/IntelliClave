@@ -64,7 +64,7 @@ def _get_model():
         if not os.path.exists(model_path):
             raise HTTPException(status_code=503, detail="Model not trained yet.")
         model = get_model(input_dim=50, num_classes=6)
-        model.load_state_dict(torch.load(model_path, map_location="cpu"))
+        model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
         model.eval()
         _model_cache["model"] = model
     return _model_cache["model"]
@@ -159,6 +159,31 @@ def predict(payload: PredictRequest, request: Request):
         predicted_label=pred_label,
         confidence=confidence,
     )
+
+
+@app.get("/attacks")
+def attacks():
+    """Return security attack simulation results for the dashboard."""
+    out = {}
+    attack_files = {
+        "model_inversion":    "results/attacks/model_inversion.json",
+        "membership_inference": "results/attacks/membership_inference.json",
+        "gradient_poisoning": "results/attacks/gradient_poisoning.json",
+    }
+    for key, rel_path in attack_files.items():
+        path = os.path.join(ROOT, rel_path)
+        if os.path.exists(path):
+            with open(path) as f:
+                data = json.load(f)
+            out[key] = data.get("summary", {})
+        else:
+            out[key] = None
+    return out
+
+
+@app.get("/privacy_log")
+def privacy_log():
+    return _read_json("results/privacy_log.json")
 
 
 @app.get("/query_stats")

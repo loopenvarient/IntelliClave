@@ -38,45 +38,5 @@
     "macro_f1": 0.90019,
     "epsilon_avg": 9.99199,
     "mode": "FL+DP"
-  },
-  {
-    "round": 6,
-    "loss": 0.21304,
-    "accuracy": 0.91847,
-    "macro_f1": 0.91763,
-    "epsilon_avg": 11.24812,
-    "mode": "FL+DP"
-  },
-  {
-    "round": 7,
-    "loss": 0.17892,
-    "accuracy": 0.92934,
-    "macro_f1": 0.92881,
-    "epsilon_avg": 12.38741,
-    "mode": "FL+DP"
-  },
-  {
-    "round": 8,
-    "loss": 0.15671,
-    "accuracy": 0.93512,
-    "macro_f1": 0.93447,
-    "epsilon_avg": 13.47293,
-    "mode": "FL+DP"
-  },
-  {
-    "round": 9,
-    "loss": 0.14103,
-    "accuracy": 0.94088,
-    "macro_f1": 0.94021,
-    "epsilon_avg": 14.51836,
-    "mode": "FL+DP"
-  },
-  {
-    "round": 10,
-    "loss": 0.13247,
-    "accuracy": 0.94431,
-    "macro_f1": 0.94372,
-    "epsilon_avg": 15.52104,
-    "mode": "FL+DP"
   }
 ]

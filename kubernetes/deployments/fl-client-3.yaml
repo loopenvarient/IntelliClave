@@ -35,7 +35,7 @@ spec:
         - name: EPSILON
           value: "10.0"
         - name: ROUNDS
-          value: "10"
+          value: "20"
         resources:
           requests:
             cpu: "250m"

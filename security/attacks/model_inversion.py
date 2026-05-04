@@ -54,7 +54,7 @@ LABEL_COL   = "label"
 
 def load_model():
     model = get_model(INPUT_DIM, N_CLASSES)
-    state = torch.load(MODEL_PATH, map_location="cpu")
+    state = torch.load(MODEL_PATH, map_location="cpu", weights_only=True)
     model.load_state_dict(state)
     model.eval()
     return model
