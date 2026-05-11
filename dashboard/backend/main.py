@@ -1,5 +1,15 @@
 """
 IntelliClave Dashboard — FastAPI backend
+
+Fixes applied:
+  - Model cache is invalidated when global_model_latest.pth changes on disk
+    (mtime check on every request — no stale predictions after retraining).
+  - /status and /results endpoints now work: they read from status.json and
+    results/results.json which are written by run_fl_simulation.py / fl_server.py.
+  - Model path discovery scans all timestamped run subdirectories and picks
+    the most recently modified global_model_latest.pth.
+  - CORS allowed origins are configurable via the CORS_ORIGINS env variable
+    (comma-separated). Defaults to http://localhost:3000 for development.
 """
 import json
 import os
@@ -23,62 +33,160 @@ from model import get_model  # noqa: E402
 
 app = FastAPI(title="IntelliClave Dashboard API", version="1.0.0")
 
+# ── CORS — configurable via environment variable ──────────────────────────────
+# Set CORS_ORIGINS="https://app.example.com,https://admin.example.com" in prod.
+_cors_env = os.environ.get("CORS_ORIGINS", "http://localhost:3000")
+_cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_cors_origins,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+# ─────────────────────────────────────────────────────────────────────────────
 
-# ── Rate limiter (mitigation 3) ───────────────────────────────────────────────
-# Max queries per client IP per window
-RATE_LIMIT_MAX     = 100   # max requests
-RATE_LIMIT_WINDOW  = 60    # seconds
-_query_log: dict   = defaultdict(list)   # ip → [timestamps]
+# ── Rate limiter ──────────────────────────────────────────────────────────────
+# NOTE: This is an in-memory rate limiter. In a multi-worker deployment
+# (uvicorn --workers N) each worker has its own counter, so the effective
+# limit is N × RATE_LIMIT_MAX. For production, replace with a Redis-backed
+# solution (e.g. slowapi with Redis storage).
+RATE_LIMIT_MAX    = 100
+RATE_LIMIT_WINDOW = 60   # seconds
+_query_log: dict  = defaultdict(list)
+
 
 def _check_rate_limit(client_ip: str):
     now    = time.time()
     window = now - RATE_LIMIT_WINDOW
-    # Keep only timestamps within the current window
     _query_log[client_ip] = [t for t in _query_log[client_ip] if t > window]
     if len(_query_log[client_ip]) >= RATE_LIMIT_MAX:
         raise HTTPException(
             status_code=429,
             detail=f"Rate limit exceeded: max {RATE_LIMIT_MAX} queries "
-                   f"per {RATE_LIMIT_WINDOW}s. Try again later."
+                   f"per {RATE_LIMIT_WINDOW}s. Try again later.",
         )
     _query_log[client_ip].append(now)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# ── Model loader (cached) ─────────────────────────────────────────────────────
-_model_cache = {}
+# ── Model loader with staleness detection ─────────────────────────────────────
+_model_cache: dict = {}
 
-ACTIVITY_NAMES = [
-    "WALKING", "WALKING_UPSTAIRS", "WALKING_DOWNSTAIRS",
-    "SITTING", "STANDING", "LAYING"
-]
+
+def _find_latest_model_path() -> str:
+    """
+    Find the most recently modified global_model_latest.pth across all
+    timestamped run subdirectories under results/fl_rounds/.
+
+    Falls back to the legacy flat path results/fl_rounds/global_model_latest.pth
+    if no run subdirectories exist.
+    """
+    fl_rounds_dir = os.path.join(ROOT, "results", "fl_rounds")
+    if not os.path.isdir(fl_rounds_dir):
+        return os.path.join(fl_rounds_dir, "global_model_latest.pth")
+
+    candidates = []
+    # Check run_* subdirectories (timestamped)
+    for entry in os.scandir(fl_rounds_dir):
+        if entry.is_dir() and entry.name.startswith("run_"):
+            p = os.path.join(entry.path, "global_model_latest.pth")
+            if os.path.exists(p):
+                candidates.append(p)
+    # Also check the legacy flat location
+    flat = os.path.join(fl_rounds_dir, "global_model_latest.pth")
+    if os.path.exists(flat):
+        candidates.append(flat)
+
+    if not candidates:
+        return flat  # will trigger 503 in _get_model
+
+    # Return the most recently modified checkpoint
+    return max(candidates, key=os.path.getmtime)
+
+
+def _find_meta_path(model_path: str) -> str:
+    """Return the model_meta.json path co-located with the checkpoint."""
+    return os.path.join(os.path.dirname(model_path), "model_meta.json")
+
+
+def _load_model_meta(model_path: str) -> dict:
+    """Load model_meta.json. Falls back to inferring from processed CSVs."""
+    meta_path = _find_meta_path(model_path)
+    if os.path.exists(meta_path):
+        with open(meta_path) as f:
+            return json.load(f)
+
+    # Fallback: infer from first processed CSV
+    processed_dir = os.path.join(ROOT, "data", "processed")
+    csv_files = sorted(
+        os.path.join(processed_dir, f)
+        for f in os.listdir(processed_dir)
+        if f.endswith(".csv")
+    ) if os.path.isdir(processed_dir) else []
+
+    if csv_files:
+        import pandas as pd
+        df_head = pd.read_csv(csv_files[0], nrows=1)
+        input_dim = len([c for c in df_head.columns if c != "label"])
+        df_full   = pd.read_csv(csv_files[0], usecols=["label"])
+        num_classes = int(df_full["label"].nunique())
+        return {
+            "input_dim":   input_dim,
+            "num_classes": num_classes,
+            "class_names": [f"class_{i}" for i in range(num_classes)],
+            "model_type":  "mlp",
+        }
+
+    raise HTTPException(
+        status_code=503,
+        detail="Cannot determine model shape — no model_meta.json or CSVs found.",
+    )
+
 
 def _get_model():
-    if "model" not in _model_cache:
-        model_path = os.path.join(ROOT, "results", "fl_rounds", "global_model_latest.pth")
-        if not os.path.exists(model_path):
-            raise HTTPException(status_code=503, detail="Model not trained yet.")
-        model = get_model(input_dim=50, num_classes=6)
-        model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
+    """
+    Return (model, meta). Reloads from disk if the checkpoint has been
+    modified since the last load (staleness detection via mtime).
+    """
+    model_path = _find_latest_model_path()
+
+    if not os.path.exists(model_path):
+        raise HTTPException(status_code=503, detail="Model not trained yet.")
+
+    current_mtime = os.path.getmtime(model_path)
+    cached_mtime  = _model_cache.get("mtime", -1)
+
+    if "model" not in _model_cache or current_mtime != cached_mtime:
+        meta  = _load_model_meta(model_path)
+        model = get_model(
+            input_dim=meta["input_dim"],
+            num_classes=meta["num_classes"],
+            model_type=meta.get("model_type", "mlp"),
+        )
+        model.load_state_dict(
+            torch.load(model_path, map_location="cpu", weights_only=True)
+        )
         model.eval()
         _model_cache["model"] = model
-    return _model_cache["model"]
+        _model_cache["meta"]  = meta
+        _model_cache["mtime"] = current_mtime
+        _model_cache["path"]  = model_path
+        print(f"[Dashboard] Model loaded from {model_path} "
+              f"(type={meta.get('model_type','mlp')})")
+
+    return _model_cache["model"], _model_cache["meta"]
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Request / response schemas ────────────────────────────────────────────────
 class PredictRequest(BaseModel):
-    features: List[float]          # 50-dim PCA feature vector
-    return_confidence: bool = False  # if False → label only (mitigation 2)
+    features: List[float]
+    return_confidence: bool = False
+
 
 class PredictResponse(BaseModel):
     predicted_class: int
     predicted_label: str
-    confidence: float | None = None    # only populated if return_confidence=True
+    confidence: float | None = None
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -97,11 +205,19 @@ def health():
 
 @app.get("/status")
 def status():
+    """
+    Return the latest training run summary.
+    Written by run_fl_simulation.py / fl_server.py after training completes.
+    """
     return _read_json("status.json")
 
 
 @app.get("/results")
 def results():
+    """
+    Return the full round-by-round metrics from the latest training run.
+    Written by run_fl_simulation.py / fl_server.py after training completes.
+    """
     return _read_json("results/results.json")
 
 
@@ -115,41 +231,41 @@ def benchmarks():
     return _read_json("results/benchmarks_baseline.json")
 
 
-# ── Inference endpoint with both mitigations ──────────────────────────────────
 @app.post("/predict", response_model=PredictResponse)
 def predict(payload: PredictRequest, request: Request):
     """
-    Run inference on a 50-dim PCA feature vector.
+    Run inference on a feature vector.
 
-    Mitigations against model inversion:
-      2. Confidence masking — by default only returns the predicted class label,
-         not the full softmax distribution. Set return_confidence=true to get
-         the top-1 confidence score (still no full probability vector exposed).
-      3. Rate limiting — max 100 queries per IP per 60 seconds.
-         Exceeding this returns HTTP 429.
+    The expected feature length is determined by the trained model at runtime —
+    no hardcoded dimensions. Works with any dataset.
+
+    Mitigations:
+      2. Confidence masking — returns label only by default. Set
+         return_confidence=true for top-1 score (no full probability vector).
+      3. Rate limiting — max 100 queries per IP per 60 seconds → HTTP 429.
     """
-    # Mitigation 3: rate limit by client IP
     client_ip = request.client.host
     _check_rate_limit(client_ip)
 
-    if len(payload.features) != 50:
+    model, meta  = _get_model()
+    expected_dim = meta["input_dim"]
+    class_names  = meta["class_names"]
+
+    if len(payload.features) != expected_dim:
         raise HTTPException(
             status_code=422,
-            detail=f"Expected 50 features, got {len(payload.features)}"
+            detail=f"Expected {expected_dim} features, got {len(payload.features)}",
         )
 
-    model = _get_model()
     x = torch.tensor(payload.features, dtype=torch.float32).unsqueeze(0)
-
     with torch.no_grad():
         logits = model(x)
         probs  = torch.softmax(logits, dim=1).squeeze()
 
     pred_class = int(probs.argmax().item())
-    pred_label = ACTIVITY_NAMES[pred_class]
+    pred_label = (class_names[pred_class]
+                  if pred_class < len(class_names) else str(pred_class))
 
-    # Mitigation 2: only expose top-1 confidence if explicitly requested,
-    # never expose the full probability vector
     confidence = None
     if payload.return_confidence:
         confidence = round(float(probs[pred_class].item()), 4)
@@ -166,9 +282,9 @@ def attacks():
     """Return security attack simulation results for the dashboard."""
     out = {}
     attack_files = {
-        "model_inversion":    "results/attacks/model_inversion.json",
+        "model_inversion":      "results/attacks/model_inversion.json",
         "membership_inference": "results/attacks/membership_inference.json",
-        "gradient_poisoning": "results/attacks/gradient_poisoning.json",
+        "gradient_poisoning":   "results/attacks/gradient_poisoning.json",
     }
     for key, rel_path in attack_files.items():
         path = os.path.join(ROOT, rel_path)
@@ -194,10 +310,30 @@ def query_stats(request: Request):
     window = now - RATE_LIMIT_WINDOW
     recent = [t for t in _query_log.get(client_ip, []) if t > window]
     return {
-        "client_ip":       client_ip,
+        "client_ip":         client_ip,
         "queries_in_window": len(recent),
-        "limit":           RATE_LIMIT_MAX,
-        "window_seconds":  RATE_LIMIT_WINDOW,
-        "remaining":       max(0, RATE_LIMIT_MAX - len(recent)),
+        "limit":             RATE_LIMIT_MAX,
+        "window_seconds":    RATE_LIMIT_WINDOW,
+        "remaining":         max(0, RATE_LIMIT_MAX - len(recent)),
+        "note": (
+            "Rate limiter is in-memory. In multi-worker deployments each worker "
+            "has its own counter. Use Redis-backed rate limiting for production."
+        ),
     }
 
+
+@app.get("/model_info")
+def model_info():
+    """Return metadata about the currently loaded model."""
+    model_path = _find_latest_model_path()
+    if not os.path.exists(model_path):
+        raise HTTPException(status_code=503, detail="Model not trained yet.")
+    meta = _load_model_meta(model_path)
+    return {
+        "model_path":  model_path,
+        "input_dim":   meta.get("input_dim"),
+        "num_classes": meta.get("num_classes"),
+        "class_names": meta.get("class_names"),
+        "model_type":  meta.get("model_type", "mlp"),
+        "checkpoint_mtime": os.path.getmtime(model_path),
+    }

@@ -1,0 +1,28 @@
+# config/constants.py
+"""
+Shared project-wide constants.
+
+Import these instead of repeating magic numbers across scripts:
+
+    from config.constants import DEFAULT_EPSILON, DEFAULT_N_CLIENTS
+"""
+
+# ── Privacy ───────────────────────────────────────────────────────────────────
+DEFAULT_EPSILON: float = 10.0   # DP privacy budget (ε)
+DEFAULT_DELTA_FALLBACK: float = 1e-5  # used only when row count is unavailable
+
+# ── Federated Learning ────────────────────────────────────────────────────────
+DEFAULT_N_CLIENTS: int   = 3
+DEFAULT_FL_ROUNDS: int   = 10
+DEFAULT_LOCAL_EPOCHS: int = 3
+
+# ── Training ──────────────────────────────────────────────────────────────────
+DEFAULT_LR: float         = 1e-3
+DEFAULT_BATCH_SIZE: int   = 32   # canonical batch size used by FL training
+DP_BATCH_SIZE: int        = 64   # larger batch used by DP/sweep experiments
+                                  # (Opacus noise scales with batch size — keep separate)
+
+# ── Data ──────────────────────────────────────────────────────────────────────
+LABEL_COL: str    = "label"
+RANDOM_SEED: int  = 42
+TEST_SPLIT: float = 0.2

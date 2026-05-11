@@ -1,0 +1,13 @@
+{
+  "input_dim": 50,
+  "num_classes": 6,
+  "class_names": [
+    "WALKING",
+    "WALKING_UPSTAIRS",
+    "WALKING_DOWNSTAIRS",
+    "SITTING",
+    "STANDING",
+    "LAYING"
+  ],
+  "model_type": "mlp"
+}

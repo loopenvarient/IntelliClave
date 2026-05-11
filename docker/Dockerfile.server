@@ -40,13 +40,15 @@ ENV ROUNDS=10
 ENV MIN_CLIENTS=3
 ENV ADDRESS=0.0.0.0:8080
 ENV USE_CRYPTO=--crypto
+ENV STRATEGY=fedavg
+ENV FRACTION_FIT=1.0
 
-# Flower gRPC port
 EXPOSE 8080
 
-# Entrypoint: supports USE_CRYPTO env var to toggle crypto layer
 CMD sh -c "python fl/run_server.py \
     --rounds ${ROUNDS} \
     --min-clients ${MIN_CLIENTS} \
     --address ${ADDRESS} \
+    --strategy ${STRATEGY} \
+    --fraction-fit ${FRACTION_FIT} \
     ${USE_CRYPTO}"

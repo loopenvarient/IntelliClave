@@ -1,5 +1,5 @@
 """
-Standalone local training for one HAR client CSV before FL.
+Standalone local training for one client CSV before FL.
 
 Usage:
     python fl/train_local.py --csv data/processed/client1.csv --epochs 20
@@ -68,8 +68,12 @@ def evaluate(model, loader, device) -> Tuple[float, float]:
     return acc, macro_f1
 
 
-def build_criterion(device: torch.device, use_class_weights: bool = True):
-    class_weights = load_class_weights(device=device) if use_class_weights else None
+def build_criterion(device: torch.device, num_classes: int, use_class_weights: bool = True):
+    class_weights = (
+        load_class_weights(num_classes=num_classes, device=device)
+        if use_class_weights
+        else None
+    )
     return nn.CrossEntropyLoss(weight=class_weights)
 
 
@@ -77,12 +81,13 @@ def train_local(
     csv_path: str,
     epochs: int = 20,
     lr: float = 1e-3,
-    save_path: Optional[str] = None,
+    save_path=None,
     batch_size: int = 32,
     use_class_weights: bool = True,
     use_dp: bool = False,
     target_epsilon: float = 10.0,
     max_grad_norm: float = 1.0,
+    model_type: str = "mlp",
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[train_local] device={device} csv={csv_path}")
@@ -91,8 +96,8 @@ def train_local(
         csv_path,
         batch_size=batch_size,
     )
-    model = get_model(metadata.input_dim, metadata.num_classes).to(device)
-    criterion = build_criterion(device, use_class_weights=use_class_weights)
+    model = get_model(metadata.input_dim, metadata.num_classes, model_type=model_type).to(device)
+    criterion = build_criterion(device, num_classes=metadata.num_classes, use_class_weights=use_class_weights)
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     # Attach Opacus PrivacyEngine if DP mode is enabled
@@ -191,6 +196,9 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--save", default=None)
+    parser.add_argument("--model-type", default="mlp",
+                        choices=["mlp", "resnet-tabular", "transformer-tabular"],
+                        help="Model architecture (default: mlp).")
     parser.add_argument("--no-class-weights", action="store_true",
                         help="Disable class weights even if data/class_weights.json exists.")
     parser.add_argument("--dp", action="store_true",
@@ -212,6 +220,7 @@ if __name__ == "__main__":
         use_dp=args.dp,
         target_epsilon=args.epsilon,
         max_grad_norm=args.max_grad_norm,
+        model_type=args.model_type,
     )
     print(
         f"\nFinal accuracy={history[-1]['accuracy']} "

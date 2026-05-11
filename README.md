@@ -1,24 +1,25 @@
 # IntelliClave
 ## Confidential Computing Secure Processing System
-> Privacy-preserving federated learning pipeline using TEE · Differential Privacy · AES-256-GCM
+> Privacy-preserving federated learning pipeline — TEE · Differential Privacy · AES-256-GCM
 
 ---
 
 ## What Is This
 
-IntelliClave is a privacy-preserving AI pipeline, in this case it is for Human Activity Recognition (HAR).
-Three organisations (FitLife, MediTrack, CareWatch) collaboratively train a shared model
-on UCI HAR sensor data without any raw data ever leaving their premises.
+IntelliClave is a dataset-agnostic, privacy-preserving federated learning pipeline. The reference
+implementation uses UCI HAR sensor data with three non-IID clients (FitLife, MediTrack, CareWatch),
+but the entire pipeline — FL training, DP, evaluation, security attacks, and dashboard — works with
+any tabular classification dataset by dropping CSVs into `data/processed/`.
 
 Three security layers stack on top of each other:
 
-- **Federated Learning** — raw data never leaves each client; only encrypted gradients are shared
-- **Differential Privacy** — Opacus DP-SGD ensures gradients cannot reveal training data (ε=10)
+- **Federated Learning** — raw data never leaves each client; only model updates are shared
+- **Differential Privacy** — Opacus DP-SGD ensures updates cannot reveal training data (ε=10)
 - **Trusted Execution Environment** — model aggregation runs inside a hardware-sealed SGX enclave
 
 ---
 
-## Key Results
+## Key Results (UCI HAR reference run)
 
 | Metric | Value |
 |--------|-------|
@@ -37,9 +38,9 @@ Three security layers stack on top of each other:
 
 | Member | Responsibility |
 |--------|----------------|
-| Member 1 | Data pipeline + Federated Learning + Deployment |
-| Member 2 | Differential Privacy + Evaluation + Dashboard |
-| Member 3 | TEE + SGX + Attestation + Kubernetes + Security |
+| Member 1 | Data pipeline · Federated Learning · Deployment |
+| Member 2 | Differential Privacy · Evaluation · Dashboard |
+| Member 3 | TEE · SGX · Attestation · Kubernetes · Security |
 
 ---
 
@@ -54,7 +55,7 @@ Three security layers stack on top of each other:
 | Cryptography | AES-256-GCM + RSA-2048 + TLS 1.3 | — |
 | Infrastructure | Docker + Kubernetes (minikube) | — |
 | Dashboard Backend | FastAPI | 0.104.1 |
-| Dashboard Frontend | React + Recharts | 18.x |
+| Dashboard Frontend | React + Recharts + Vite | 18.x |
 
 ---
 
@@ -62,19 +63,25 @@ Three security layers stack on top of each other:
 
 ```
 intelliclave/
-├── fl/                     # Federated Learning (Flower server + client + DP)
-│   ├── model.py            # HARClassifier (50→128→64→6)
-│   ├── data_utils.py       # CSV loading, StandardScaler, train/test split
-│   ├── fl_client.py        # Flower client + Opacus DP + AES-256-GCM crypto
-│   ├── fl_server.py        # Flower server + FedAvg + decryption + sealed storage
-│   ├── run_server.py       # Server launcher (--crypto, --attest flags)
-│   └── run_client.py       # Client launcher (--dp, --crypto, --attest flags)
+├── config/
+│   └── constants.py        # Shared defaults (ε, n_clients, lr, batch_size, etc.)
 │
-├── privacy/                # Differential Privacy (Opacus)
-│   ├── dp_trainer.py       # DPTrainer wrapper around Opacus PrivacyEngine
-│   ├── dp_flower_client.py # Standalone DP Flower client
-│   ├── epsilon_sweep.py    # Privacy-utility tradeoff experiments
-│   └── budget_monitor.py   # Per-client epsilon tracking
+├── fl/                     # Federated Learning core
+│   ├── model.py            # FLClassifier (MLP) + ResNetTabular + TransformerTabular
+│   ├── data_utils.py       # Generic CSV loader — any dataset, auto schema inference
+│   ├── fl_client.py        # Flower client + Opacus DP + AES-256-GCM crypto
+│   ├── fl_server.py        # Flower server + FedAvg/FedProx + early stopping
+│   ├── run_server.py       # Server launcher (--crypto, --attest, --strategy flags)
+│   ├── run_client.py       # Client launcher (--dp, --epsilon, --crypto, --attest)
+│   ├── run_fl_simulation.py # Single-process simulation (no Flower server needed)
+│   ├── train_local.py      # Standalone local training (baseline + DP mode)
+│   └── evaluate_global_model.py  # Evaluate saved checkpoint on all client CSVs
+│
+├── privacy/                # Differential Privacy
+│   ├── dp_trainer.py       # DPTrainer — Opacus PrivacyEngine wrapper (lr configurable)
+│   ├── epsilon_sweep.py    # Privacy-utility tradeoff experiments (argparse)
+│   ├── budget_monitor.py   # Per-client epsilon tracking
+│   └── run_budget_monitor.py  # Budget monitor CLI (--max-epsilon, --privacy-json)
 │
 ├── tee/                    # Trusted Execution Environment
 │   ├── attestation/        # SGX attestation simulator + FL integration
@@ -89,40 +96,45 @@ intelliclave/
 │   ├── generate_tls_certs.py  # TLS certificate generator
 │   └── test_crypto.py      # 4 crypto tests (all pass)
 │
-├── security/attacks/       # Security analysis
+├── security/attacks/       # Security analysis (all fully argparse-configurable)
 │   ├── model_inversion.py  # Gradient-based class reconstruction
 │   ├── membership_inference.py  # Threshold attack (AUC ≈ 0.5 — resistant)
 │   └── gradient_poisoning.py    # Label-flip Byzantine attack sweep
 │
 ├── evaluation/
-│   ├── cross_validation.py # 5-fold stratified CV (96.98% ± 0.34%)
+│   ├── cross_validation.py # 5-fold stratified CV — any dataset
 │   ├── metrics.py          # F1, accuracy, AUC-ROC helpers
-│   └── generate_graph6.py  # 4-panel final results figure
+│   └── generate_graph6.py  # 4-panel final results figure (data-driven, no hardcoding)
 │
 ├── dashboard/
-│   ├── backend/main.py     # FastAPI backend (13 endpoints, 13/13 E2E tests pass)
-│   └── frontend/           # React + Recharts live dashboard
+│   ├── backend/main.py     # FastAPI — 9 endpoints, 13/13 E2E tests pass
+│   └── frontend/           # React + Recharts + Vite live dashboard
+│
+├── data/
+│   ├── processed/          # Client CSVs (client1.csv, client2.csv, ...)
+│   ├── datascripts/        # pipeline.py (3 input modes), weights.py, har_analysis.py
+│   └── class_weights.json  # Optional per-class loss weights
 │
 ├── kubernetes/             # K8s deployment (minikube)
-│   ├── cold_start.sh       # Full cluster cold start script
-│   ├── deployments/        # Server + 3 clients + SGX variants + dashboard
+│   ├── cold_start.sh       # Full cluster cold start
+│   ├── deployments/        # Server + clients + SGX variants + dashboard
 │   ├── policies/           # NetworkPolicy (ports 8080 + 8001)
 │   ├── secrets/            # fl-crypto-keys Secret template
 │   └── volumes/            # PVCs (server 1Gi, clients 100Mi each)
 │
 ├── docker/
-│   ├── Dockerfile.server   # FL server image (torch 2.1.0 + flwr + cryptography)
+│   ├── Dockerfile.server   # FL server image
 │   ├── Dockerfile.client   # FL client image (+ opacus)
-│   └── docker-compose.yml  # Full stack: server + 3 clients (20 rounds, DP + crypto)
+│   ├── docker-compose.yml  # Full stack: server + 3 clients (DP + crypto)
+│   └── generate_compose.py # Generate compose for N clients (--clients N)
 │
-├── data/processed/         # Frozen client CSVs (3 × non-IID, PCA-50)
-├── results/                # All experiment outputs
-│   ├── fl_rounds/          # Model checkpoints + metrics per round
-│   ├── attacks/            # Attack simulation results (3 attacks × DP/no-DP)
+├── results/                # All experiment outputs (pre-populated for demo)
+│   ├── fl_rounds/          # Model checkpoints + metrics + model_meta.json
+│   ├── attacks/            # Attack results (3 attacks × DP/no-DP)
 │   ├── benchmarks/         # TEE overhead measurements
-│   └── graphs/             # Final results figure (graph6)
+│   └── graphs/             # graph6_final_results.png
 │
-├── attestation.json        # Live attestation record (refreshed on server start)
+├── attestation.json        # Live attestation record
 ├── status.json             # Live training status (read by dashboard)
 ├── contracts.md            # Data contracts and interface specifications
 └── requirements.txt        # Pinned Python dependencies
@@ -132,72 +144,138 @@ intelliclave/
 
 ## Quick Start
 
-### Local (no Docker)
+### Prerequisites
+
+| Tool | Version | Check |
+|------|---------|-------|
+| Python (conda) | 3.10 | `conda activate intelliclave` |
+| Node.js | 18+ | `node --version` |
+| npm | 9+ | `npm --version` |
+| Docker | 24+ | `docker --version` |
+
+### 1 — Set up the environment
 
 ```bash
-# 1. Create and activate conda environment
+git clone <repo-url>
+cd IntelliClave
+
+# Create conda environment
 conda create -n intelliclave python=3.10
 conda activate intelliclave
-
-# 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Start dashboard backend (terminal 1)
+# Frontend dependencies
+cd dashboard/frontend/intelliclave-ui
+npm install
+cd ../../..
+```
+
+> **All Python commands require `conda activate intelliclave` first.**
+
+### 2 — Verify everything works
+
+```bash
+conda activate intelliclave
+
+# Crypto (4/4)
+python crypto/certs/test_crypto.py
+
+# Attestation
+python tee/attestation/attestation_integration.py
+
+# Sealed storage
+python tee/sealed_storage/sealed_storage.py
+
+# Dashboard E2E (13/13) — no server needed, uses TestClient
+python dashboard/backend/test_e2e.py
+```
+
+### 3 — Start the dashboard
+
+The dashboard loads pre-recorded results immediately — no training run required.
+
+```bash
+# Terminal A — backend
+conda activate intelliclave
 cd dashboard/backend
 uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
-# 4. Start dashboard frontend (terminal 2)
+# Terminal B — frontend
 cd dashboard/frontend/intelliclave-ui
-npm install && npm start
-# Opens at http://localhost:3000
+npm run dev
+# Opens at http://localhost:5173
 ```
 
-### Run FL baseline (no DP)
+---
+
+## Running FL Training
+
+### Simulation (single process, easiest)
 
 ```bash
-# Terminal 1 — server
-python fl/run_server.py --rounds 10 --min-clients 3
+conda activate intelliclave
 
-# Terminals 2, 3, 4 — clients
-python fl/run_client.py --id 1
-python fl/run_client.py --id 2
-python fl/run_client.py --id 3
+# Baseline (no DP)
+python fl/run_fl_simulation.py --rounds 10 --clients 3
+
+# With DP
+python fl/run_fl_simulation.py --rounds 5 --clients 3
+
+# FedProx + ResNet model
+python fl/run_fl_simulation.py --strategy fedprox --model-type resnet-tabular
 ```
 
-### Run FL + DP (ε=10)
+### Distributed (Flower server + clients)
 
 ```bash
 # Terminal 1 — server
 python fl/run_server.py --rounds 5 --min-clients 3
 
-# Terminals 2, 3, 4 — clients with DP
+# Terminals 2, 3, 4 — clients (no DP)
+python fl/run_client.py --id 1
+python fl/run_client.py --id 2
+python fl/run_client.py --id 3
+```
+
+### Distributed with DP
+
+```bash
+# Server
+python fl/run_server.py --rounds 5 --min-clients 3
+
+# Clients — --rounds must match server
 python fl/run_client.py --id 1 --dp --epsilon 10.0 --rounds 5
 python fl/run_client.py --id 2 --dp --epsilon 10.0 --rounds 5
 python fl/run_client.py --id 3 --dp --epsilon 10.0 --rounds 5
 ```
 
-### Run FL + DP + Crypto + Attestation (full stack)
+### Full stack (DP + Crypto + Attestation)
 
 ```bash
-# Terminal 1 — server (generates keypair + attestation record)
+# Server
 python fl/run_server.py --rounds 5 --min-clients 3 --crypto --attest
 
-# Terminals 2, 3, 4 — clients (verify attestation before connecting)
+# Clients
 python fl/run_client.py --id 1 --dp --epsilon 10.0 --rounds 5 --crypto --attest
 python fl/run_client.py --id 2 --dp --epsilon 10.0 --rounds 5 --crypto --attest
 python fl/run_client.py --id 3 --dp --epsilon 10.0 --rounds 5 --crypto --attest
 ```
 
-### Docker (20 rounds, DP + crypto, default)
+### Docker
 
 ```bash
+# Default: 3 clients, 10 rounds, DP + crypto
 docker compose -f docker/docker-compose.yml up --build
+
+# N clients
+python docker/generate_compose.py --clients 5
+docker compose -f docker/docker-compose.generated.yml up --build
 ```
 
 ### Kubernetes (minikube)
 
 ```bash
-# Full cold start (generates keypair, applies all resources, waits for readiness)
+minikube start --driver=docker --cpus=4 --memory=6144
 bash kubernetes/cold_start.sh
 
 # SGX production mode
@@ -206,36 +284,60 @@ SGX=true bash kubernetes/cold_start.sh
 
 ---
 
-## Verification Checklist
+## Using Your Own Dataset
+
+IntelliClave works with any tabular classification dataset. Three input modes:
 
 ```bash
-# Crypto layer (4/4 tests)
-python crypto/certs/test_crypto.py
+conda activate intelliclave
 
-# SGX attestation
-python tee/attestation/attestation_simulator.py
-# → [ATTESTATION] ✓ ATTESTATION VERIFIED
+# Mode A — one CSV per client (recommended)
+python data/datascripts/pipeline.py --mode per-client \
+    --client-csvs hospital_a.csv hospital_b.csv hospital_c.csv \
+    --label-col diagnosis
 
-# Attestation integration (server + 3 clients + rogue server blocked)
-python tee/attestation/attestation_integration.py
-# → ATTESTATION INTEGRATION DEMO PASSED ✓
+# Mode B — one combined CSV, split by a column
+python data/datascripts/pipeline.py --mode split \
+    --csv combined_data.csv --label-col outcome --split-col site_id
 
-# Sealed storage
-python tee/sealed_storage/sealed_storage.py
-# → ALL SEALED STORAGE TESTS PASSED ✓
+# Mode B — random split into N clients
+python data/datascripts/pipeline.py --mode split \
+    --csv combined_data.csv --label-col target --n-clients 4
 
-# Dashboard E2E (13/13 tests)
-python dashboard/backend/test_e2e.py
-# → ALL E2E TESTS PASSED ✓ (13/13)
+# Recompute class weights after pipeline
+python data/datascripts/weights.py
+```
 
-# K8s YAML validation
-bash kubernetes/validate.sh
-# → ALL YAML FILES VALID ✓
+Then run training as normal — schema, class count, and feature dimensions are all inferred automatically.
+
+---
+
+## Experiments
+
+```bash
+conda activate intelliclave
+
+# Privacy-utility tradeoff (ε sweep)
+python privacy/epsilon_sweep.py --epsilons 1 2 5 10 20
+
+# Cross-validation
+python evaluation/cross_validation.py --folds 5 --epochs 10
+
+# Security attacks
+python security/attacks/model_inversion.py
+python security/attacks/membership_inference.py
+python security/attacks/gradient_poisoning.py --fl-rounds 5
+
+# Generate final results figure
+python evaluation/generate_graph6.py
+
+# Evaluate saved global model
+python fl/evaluate_global_model.py --checkpoint results/fl_rounds/global_model_latest.pth
 ```
 
 ---
 
-## Dashboard API Endpoints
+## Dashboard API
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -246,38 +348,39 @@ bash kubernetes/validate.sh
 | GET | `/benchmarks` | TEE overhead measurements |
 | GET | `/attacks` | Security attack simulation summaries |
 | GET | `/privacy_log` | Per-client per-round epsilon audit log |
+| GET | `/model_info` | Loaded model metadata (input_dim, classes, type) |
 | GET | `/query_stats` | Rate limit status for calling IP |
-| POST | `/predict` | HAR inference (confidence masking + rate limiting) |
+| POST | `/predict` | Inference — returns label + optional confidence |
 
 ---
 
 ## Security Mitigations
 
-| Threat | Mitigation | Result |
-|--------|-----------|--------|
+| Threat (STRIDE) | Mitigation | Result |
+|-----------------|-----------|--------|
 | Data leakage | Federated Learning — raw data never leaves client | ✓ |
 | Gradient leakage | DP-SGD (ε=10, δ=1/n) | ε ≤ 10 across all rounds |
 | Weight tampering | AES-256-GCM + RSA-2048 + HMAC-SHA256 | Tamper detected ✓ |
 | Rogue server | SGX attestation — MRENCLAVE verified before connecting | Blocked ✓ |
 | Model inversion | Confidence masking + rate limiting (100 req/60s) | Partial mitigation |
 | Membership inference | DP-SGD reduces confidence gap | AUC = 0.503 (resistant) |
-| Gradient poisoning | FedAvg dilution (1 of 3 clients) | −3.78% at 100% flip |
+| Gradient poisoning | FedAvg dilution (1 of N clients) | −3.78% at 100% flip |
 
 ---
 
 ## Known Limitations
 
 1. **gramine-direct** — WSL2 has no SGX hardware. Production uses `gramine-sgx` with zero code changes.
-2. **FedAvg Byzantine robustness** — 3.78% accuracy drop at 100% poison rate. Production fix: Krum or Trimmed Mean.
-3. **Model inversion** — cosine similarity 0.90 in PCA space even with confidence masking. PCA vectors cannot be mapped to raw sensor data without `pca_model.pkl`.
-4. **DP accuracy cost** — ε=10 costs 5.72% vs no-DP baseline. ε=1 → 50.89% accuracy.
-5. **Dashboard** — reflects the 5-round FL+DP run. A live training run updates these in real time.
+2. **FedAvg Byzantine robustness** — 3.78% accuracy drop at 100% poison rate. Production fix: Krum or Trimmed Mean aggregation.
+3. **Model inversion** — cosine similarity 0.90 in PCA space even with confidence masking. PCA vectors cannot be mapped back to raw sensor data without `pca_model.pkl`.
+4. **DP accuracy cost** — ε=10 costs 5.72% vs no-DP baseline. ε=1 → 50.89% accuracy (unusable).
+5. **In-memory rate limiter** — effective limit is `N × 100` in multi-worker deployments. Replace with Redis-backed rate limiting for production.
 
 ---
 
 ## Interface Contracts
 
-All shared data formats, CSV schemas, and API contracts are in `contracts.md`.
+All shared data formats, CSV schemas, and API contracts are documented in `contracts.md`.
 
 ---
 
@@ -289,4 +392,4 @@ dev      → integration branch
 feature/ → individual feature branches
 ```
 
-Always create a PR to merge into `dev`. Never push directly to `main`.
+Always open a PR to merge into `dev`. Never push directly to `main`.

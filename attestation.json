@@ -1,10 +1,10 @@
 {
   "tee_verified": true,
   "enclave_id": "intelliclave-enclave-v1",
-  "attestation_time": "2026-05-04T15:52:03Z",
+  "attestation_time": "2026-05-08T21:37:48Z",
   "platform": "Intel SGX (simulated)",
-  "integrity_hash": "a881b36666e38cab",
-  "mrenclave": "a881b36666e38cab4255b3da7128c3403bf3f2a531ab390c4524e93c37da2f43",
+  "integrity_hash": "69f80a358f30a2e9",
+  "mrenclave": "69f80a358f30a2e96bec4362b7a07ad395585592cac632a685f4ee5249d69af1",
   "quote_size_bytes": 218,
   "status": "VERIFIED",
   "mode": "gramine-direct",

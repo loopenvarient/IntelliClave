@@ -57,11 +57,13 @@ ENV USE_CRYPTO=--crypto
 ENV USE_DP=--dp
 ENV EPSILON=10.0
 ENV ROUNDS=10
+ENV MODEL_TYPE=mlp
 
 CMD sh -c "python fl/run_client.py \
     --id ${CLIENT_ID} \
     --csv ${CSV_PATH} \
     --server ${SERVER_ADDR} \
+    --model-type ${MODEL_TYPE} \
     ${USE_CRYPTO} \
     ${USE_DP} \
     --epsilon ${EPSILON} \

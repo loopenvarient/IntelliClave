@@ -2,8 +2,8 @@
 tee/full_stack_test/pytorch_test.py
 
 PyTorch forward pass inside Gramine.
-Input:  50 PCA features (matches IntelliClave HARClassifier)
-Output: 6 class logits
+Tests that torch runs correctly inside the enclave with a generic
+feed-forward classifier — dimensions are not tied to any specific dataset.
 
 Run:
     gramine-manifest pytorch_test.manifest.template pytorch_test.manifest
@@ -18,9 +18,12 @@ print("=" * 50)
 print("IntelliClave — PyTorch in Gramine Test")
 print("=" * 50)
 
-# ── Model matching HARClassifier architecture ─────────
-class HARClassifier(nn.Module):
-    def __init__(self, input_dim=50, num_classes=6):
+# ── Generic feed-forward classifier ──────────────────
+INPUT_DIM   = 32   # synthetic — not tied to any dataset
+NUM_CLASSES = 4
+
+class FLClassifier(nn.Module):
+    def __init__(self, input_dim=INPUT_DIM, num_classes=NUM_CLASSES):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, 128),
@@ -34,13 +37,13 @@ class HARClassifier(nn.Module):
         return self.net(x)
 
 # ── Forward pass ──────────────────────────────────────
-model = HARClassifier(input_dim=50, num_classes=6)
+model = FLClassifier(input_dim=INPUT_DIM, num_classes=NUM_CLASSES)
 model.eval()
 
-batch = torch.randn(4, 50)          # batch of 4 samples, 50 features each
+batch = torch.randn(4, INPUT_DIM)
 with torch.no_grad():
-    logits = model(batch)           # shape: (4, 6)
-    preds  = logits.argmax(dim=1)   # predicted class per sample
+    logits = model(batch)
+    preds  = logits.argmax(dim=1)
 
 print(f"  PyTorch version : {torch.__version__}")
 print(f"  Input shape     : {list(batch.shape)}")

@@ -38,10 +38,10 @@ print(f"OK  (v{opacus.__version__})")
 import opacus
 
 # ── 4. Model ──────────────────────────────────────────
-print("\n[4] Building HARClassifier (50 → 128 → 64 → 6)...", end=" ", flush=True)
+print("\n[4] Building FLClassifier (synthetic dims)...", end=" ", flush=True)
 
-class HARClassifier(nn.Module):
-    def __init__(self, input_dim=50, num_classes=6):
+class FLClassifier(nn.Module):
+    def __init__(self, input_dim=32, num_classes=4):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, 128),
@@ -53,13 +53,17 @@ class HARClassifier(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-model = HARClassifier()
+# Use small synthetic dims — the enclave test only checks that the stack works,
+# not that the model matches any specific dataset.
+INPUT_DIM   = 32
+NUM_CLASSES = 4
+model = FLClassifier(input_dim=INPUT_DIM, num_classes=NUM_CLASSES)
 print("OK")
 
 # ── 5. Synthetic data ─────────────────────────────────
-print("[5] Creating synthetic HAR data (256 samples)...", end=" ", flush=True)
-X = torch.randn(256, 50)
-y = torch.randint(0, 6, (256,))
+print(f"[5] Creating synthetic data (256 × {INPUT_DIM})...", end=" ", flush=True)
+X = torch.randn(256, INPUT_DIM)
+y = torch.randint(0, NUM_CLASSES, (256,))
 dataset    = TensorDataset(X, y)
 dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 print("OK")

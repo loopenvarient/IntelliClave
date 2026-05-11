@@ -1,5 +1,5 @@
 """
-Flower FL client for one HAR CSV / organisation.
+Flower FL client for one CSV dataset / organisation.
 """
 import argparse
 import json
@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 sys.path.insert(0, os.path.dirname(__file__))
-from data_utils import load_class_weights, load_csv_data  # noqa: E402
+from data_utils import load_class_weights, load_csv_data, DatasetMetadata  # noqa: E402
 from model import get_model  # noqa: E402
 from train_local import evaluate, train_one_epoch  # noqa: E402
 
@@ -30,17 +30,7 @@ except ImportError:
     print("[fl_client] WARNING: crypto_context not found — running without encryption.")
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Per-client delta values (row counts confirmed in contracts.md)
-# delta = 1 / n_train  where n_train = 80% of total rows (0.8 × client rows)
-# Client 1: 3105 × 0.8 = 2484  → δ = 4.03e-4
-# Client 2: 3426 × 0.8 = 2741  → δ = 3.65e-4
-# Client 3: 3768 × 0.8 = 3014  → δ = 3.32e-4
-# Using approximate safe values — will be overridden by actual train_size
-_CLIENT_APPROX_DELTA = {
-    "1": 1 / 2484,
-    "2": 1 / 2741,
-    "3": 1 / 3014,
-}
+# delta is computed from actual train_size after data loading (1 / n_train)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -51,11 +41,12 @@ class IntelliClaveClient(fl.client.NumPyClient):
         client_id: str,
         local_epochs: int = 3,
         learning_rate: float = 1e-3,
+        model_type: str = "mlp",
         # ── DP parameters — all optional, default = DP off ───────────────────────
         use_dp: bool = False,
         target_epsilon: float = 10.0,
         max_grad_norm: float = 1.0,
-        num_fl_rounds: int = 5,
+        num_fl_rounds: int = 10,
         # ─────────────────────────────────────────────────────────────────────────
         # ── Crypto: optional encryption of weights in transit ────────────────────
         use_crypto: bool = False,
@@ -83,8 +74,11 @@ class IntelliClaveClient(fl.client.NumPyClient):
         self.model = get_model(
             self.metadata.input_dim,
             self.metadata.num_classes,
+            model_type=model_type,
         ).to(self.device)
-        class_weights = load_class_weights(device=self.device)
+        class_weights = load_class_weights(
+            num_classes=self.metadata.num_classes, device=self.device
+        )
         self.criterion = nn.CrossEntropyLoss(weight=class_weights)
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
 
@@ -183,7 +177,7 @@ class IntelliClaveClient(fl.client.NumPyClient):
                 self.device,
             )
 
-        accuracy, macro_f1 = evaluate(self.model, self.train_loader, self.device)
+        accuracy, macro_f1 = evaluate(self.model, self.test_loader, self.device)
 
         # Metrics dict
         metrics = {
@@ -247,10 +241,11 @@ def start_client(
     csv_path: str,
     client_id: str,
     server_address: str = "127.0.0.1:8080",
+    model_type: str = "mlp",
     use_dp: bool = False,
     target_epsilon: float = 10.0,
     max_grad_norm: float = 1.0,
-    num_fl_rounds: int = 5,
+    num_fl_rounds: int = 10,
     use_crypto: bool = False,
     server_public_pem: bytes = None,
 ):
@@ -259,6 +254,7 @@ def start_client(
         client=IntelliClaveClient(
             csv_path=csv_path,
             client_id=client_id,
+            model_type=model_type,
             use_dp=use_dp,
             target_epsilon=target_epsilon,
             max_grad_norm=max_grad_norm,
@@ -274,10 +270,19 @@ if __name__ == "__main__":
     parser.add_argument("--csv", required=True)
     parser.add_argument("--id", required=True)
     parser.add_argument("--server", default="127.0.0.1:8080")
+    parser.add_argument("--lr", type=float, default=1e-3,
+                        help="Learning rate for local optimizer (default: 1e-3).")
+    parser.add_argument("--local-epochs", type=int, default=3,
+                        help="Local training epochs per FL round (default: 3).")
+    parser.add_argument("--batch-size", type=int, default=32,
+                        help="DataLoader batch size (default: 32).")
     parser.add_argument("--dp", action="store_true", help="Enable Differential Privacy via Opacus.")
     parser.add_argument("--epsilon", type=float, default=10.0, help="Target epsilon (privacy budget). Default=10.0.")
     parser.add_argument("--max-grad-norm", type=float, default=1.0, help="Gradient clipping norm for DP-SGD. Default=1.0.")
-    parser.add_argument("--rounds", type=int, default=5, help="Total FL rounds — must match server. Default=5.")
+    parser.add_argument("--model-type", default="mlp",
+                        choices=["mlp", "resnet-tabular", "transformer-tabular"],
+                        help="Model architecture (default: mlp).")
+    parser.add_argument("--rounds", type=int, default=10, help="Total FL rounds — must match server --rounds. Default=10.")
     parser.add_argument("--crypto", action="store_true", help="Encrypt weights in transit using AES-256-GCM + RSA.")
     parser.add_argument("--pubkey", default=None, help="Path to server public key PEM file. Defaults to crypto/certs/keys/server_public.pem")
     args = parser.parse_args()
@@ -303,6 +308,9 @@ if __name__ == "__main__":
         args.csv,
         args.id,
         args.server,
+        model_type=args.model_type,
+        local_epochs=args.local_epochs,
+        learning_rate=args.lr,
         use_dp=args.dp,
         target_epsilon=args.epsilon,
         max_grad_norm=args.max_grad_norm,

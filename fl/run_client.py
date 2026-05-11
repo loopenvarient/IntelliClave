@@ -29,11 +29,20 @@ if __name__ == "__main__":
     parser.add_argument("--pubkey", default=None,
                         help="Path to server_public.pem. "
                              "Defaults to crypto/certs/keys/server_public.pem")
+    parser.add_argument("--model-type", default="mlp",
+                        choices=["mlp", "resnet-tabular", "transformer-tabular"],
+                        help="Model architecture (default: mlp).")
+    parser.add_argument("--lr", type=float, default=1e-3,
+                        help="Learning rate (default: 1e-3).")
+    parser.add_argument("--local-epochs", type=int, default=3,
+                        help="Local training epochs per FL round (default: 3).")
+    parser.add_argument("--batch-size", type=int, default=32,
+                        help="DataLoader batch size (default: 32).")
     parser.add_argument("--dp", action="store_true",
                         help="Enable Differential Privacy via Opacus.")
     parser.add_argument("--epsilon", type=float, default=10.0,
                         help="DP target epsilon. Default=10.0.")
-    parser.add_argument("--rounds", type=int, default=5,
+    parser.add_argument("--rounds", type=int, default=10,
                         help="Total FL rounds — must match server --rounds.")
     parser.add_argument("--attest", action="store_true",
                         help="Verify server SGX attestation before connecting.")
@@ -78,6 +87,9 @@ if __name__ == "__main__":
         csv_path=csv_path,
         client_id=args.id,
         server_address=args.server,
+        model_type=args.model_type,
+        local_epochs=args.local_epochs,
+        learning_rate=args.lr,
         use_crypto=args.crypto,
         server_public_pem=server_public_pem,
         use_dp=args.dp,

@@ -248,23 +248,13 @@ def run_integration_demo():
     server_att = AttestationServer()
     record     = server_att.attest()
 
-    # ── Step 2: Client 1 verifies before connecting ───────────────────────────
-    print("\n--- Client 1 (FitLife) ---")
-    client1 = AttestationClient(client_id="1")
-    verified = client1.verify()
-    assert verified
-
-    # ── Step 3: Client 2 verifies ─────────────────────────────────────────────
-    print("\n--- Client 2 (MediTrack) ---")
-    client2 = AttestationClient(client_id="2")
-    verified = client2.verify()
-    assert verified
-
-    # ── Step 4: Client 3 verifies ─────────────────────────────────────────────
-    print("\n--- Client 3 (CareWatch) ---")
-    client3 = AttestationClient(client_id="3")
-    verified = client3.verify()
-    assert verified
+    # ── Step 2: Clients verify before connecting ─────────────────────────────
+    n_clients = 3
+    for i in range(1, n_clients + 1):
+        print(f"\n--- Client {i} ---")
+        c = AttestationClient(client_id=str(i))
+        verified = c.verify()
+        assert verified
 
     # ── Step 5: Rogue server simulation ───────────────────────────────────────
     print("\n--- Rogue Server Simulation ---")
@@ -296,10 +286,9 @@ def run_integration_demo():
     print()
     print("=" * 55)
     print("ATTESTATION INTEGRATION DEMO PASSED ✓")
-    print("  Server attested    : ✓")
-    print("  Client 1 verified  : ✓")
-    print("  Client 2 verified  : ✓")
-    print("  Client 3 verified  : ✓")
+    print("  Server attested     : ✓")
+    for i in range(1, n_clients + 1):
+        print(f"  Client {i} verified   : ✓")
     print("  Rogue server blocked: ✓")
     print("=" * 55)
 

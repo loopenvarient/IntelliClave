@@ -41,24 +41,43 @@ _ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
 sys.path.insert(0, os.path.join(_ROOT, "fl"))
 
 from model import get_model          # noqa: E402
-from data_utils import ACTIVITY_NAMES  # noqa: E402
+from data_utils import infer_csv_schema  # noqa: E402
+
+sys.path.insert(0, os.path.join(_ROOT, "config"))
+from constants import (              # noqa: E402
+    DEFAULT_EPSILON, LABEL_COL, RANDOM_SEED,
+)
 
 MODEL_PATH     = os.path.join(_ROOT, "results", "fl_rounds", "global_model_latest.pth")
-MODEL_PATH_DP  = os.path.join(_ROOT, "results", "fl_rounds", "global_model_latest.pth")  # same checkpoint — DP run overwrites latest
-CLIENT_CSVS    = [os.path.join(_ROOT, "data", "processed", f"client{i}.csv")
-                  for i in range(1, 4)]
+META_PATH      = os.path.join(_ROOT, "results", "fl_rounds", "model_meta.json")
+PROCESSED_DIR  = os.path.join(_ROOT, "data", "processed")
+CLIENT_CSVS    = sorted(
+    os.path.join(PROCESSED_DIR, f)
+    for f in os.listdir(PROCESSED_DIR)
+    if f.endswith(".csv")
+) if os.path.isdir(PROCESSED_DIR) else []
 OUT_PATH       = os.path.join(_ROOT, "results", "attacks", "membership_inference.json")
 OUT_PATH_NODP  = os.path.join(_ROOT, "results", "attacks", "membership_inference_nodp.json")
-INPUT_DIM   = 50
-N_CLASSES   = 6
-LABEL_COL   = "label"
-TEST_SPLIT  = 0.3   # 70% treated as "members", 30% as "non-members"
-RANDOM_SEED = 42
+TEST_SPLIT  = 0.3
 
 
-def load_model():
-    model = get_model(INPUT_DIM, N_CLASSES)
-    state = torch.load(MODEL_PATH, map_location="cpu", weights_only=True)
+def load_meta():
+    if os.path.exists(META_PATH):
+        with open(META_PATH) as f:
+            return json.load(f)
+    if not CLIENT_CSVS:
+        raise FileNotFoundError("No model_meta.json and no CSVs in data/processed/")
+    input_dim, _ = infer_csv_schema(CLIENT_CSVS[0], LABEL_COL)
+    df = pd.read_csv(CLIENT_CSVS[0], usecols=[LABEL_COL])
+    num_classes = int(df[LABEL_COL].nunique())
+    return {"input_dim": input_dim, "num_classes": num_classes,
+            "class_names": [f"class_{i}" for i in range(num_classes)]}
+
+
+def load_model(model_path: str = MODEL_PATH):
+    meta = load_meta()
+    model = get_model(meta["input_dim"], meta["num_classes"])
+    state = torch.load(model_path, map_location="cpu", weights_only=True)
     model.load_state_dict(state)
     model.eval()
     return model
@@ -105,7 +124,9 @@ def threshold_attack(member_conf, nonmember_conf):
     }
 
 
-def main(out_path: str = OUT_PATH, dp_mode: bool = False):
+def main(out_path: str = OUT_PATH, dp_mode: bool = False,
+         model_path: str = MODEL_PATH, label_col: str = LABEL_COL,
+         test_split: float = TEST_SPLIT, seed: int = RANDOM_SEED):
     print("=" * 55)
     print("Attack 2: Membership Inference")
     if dp_mode:
@@ -114,21 +135,30 @@ def main(out_path: str = OUT_PATH, dp_mode: bool = False):
         print("Mode: No-DP model (baseline)")
     print("=" * 55)
 
-    model = load_model()
+    model = load_model(model_path=model_path)
     all_results = []
 
     for i, csv_path in enumerate(CLIENT_CSVS, 1):
-        client_name = ["FitLife", "MediTrack", "CareWatch"][i - 1]
+        client_name = f"client{i}"
         print(f"\n  Client {i} ({client_name})...")
 
         df = pd.read_csv(csv_path).dropna()
-        feat_cols = [c for c in df.columns if c != LABEL_COL]
+        feat_cols = [c for c in df.columns if c != label_col]
         X = df[feat_cols].values.astype(np.float32)
-        y = df[LABEL_COL].values.astype(np.int64) - 1
+        raw_y = df[label_col].values
+
+        # Auto-detect label offset — works for 0-based, 1-based, or any range
+        unique = sorted(np.unique(raw_y).tolist())
+        if all(isinstance(v, (int, float, np.integer, np.floating)) for v in unique):
+            offset = int(min(unique))
+            y = raw_y.astype(np.int64) - offset
+        else:
+            label_map = {v: i for i, v in enumerate(unique)}
+            y = np.array([label_map[v] for v in raw_y], dtype=np.int64)
 
         # Split: members = training set, non-members = held-out
         X_mem, X_nonmem, _, _ = train_test_split(
-            X, y, test_size=TEST_SPLIT, random_state=RANDOM_SEED, stratify=y
+            X, y, test_size=test_split, random_state=seed, stratify=y
         )
 
         # Scale using member data only (simulates attacker knowing train distribution)
@@ -208,11 +238,31 @@ def main(out_path: str = OUT_PATH, dp_mode: bool = False):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Membership Inference Attack against a trained FL model.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--dp", action="store_true",
                         help="Tag results as DP-trained model run (saves to _nodp.json when not set).")
+    parser.add_argument("--model-path", default=MODEL_PATH,
+                        help="Path to the trained model .pth file.")
+    parser.add_argument("--label-col", default=LABEL_COL,
+                        help="Name of the label column in client CSVs.")
+    parser.add_argument("--test-split", type=float, default=TEST_SPLIT,
+                        help="Fraction of each client's data held out as non-members.")
+    parser.add_argument("--seed", type=int, default=RANDOM_SEED,
+                        help="Random seed for reproducibility.")
+    parser.add_argument("--out", default=None,
+                        help="Override output JSON path (default: auto-selected by --dp flag).")
     args = parser.parse_args()
 
     # Route output: no --dp flag → _nodp.json, --dp flag → .json (canonical DP result)
-    out_path = OUT_PATH if args.dp else OUT_PATH_NODP
-    main(out_path=out_path, dp_mode=args.dp)
+    out_path = args.out or (OUT_PATH if args.dp else OUT_PATH_NODP)
+    main(
+        out_path=out_path,
+        dp_mode=args.dp,
+        model_path=args.model_path,
+        label_col=args.label_col,
+        test_split=args.test_split,
+        seed=args.seed,
+    )
