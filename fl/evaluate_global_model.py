@@ -70,7 +70,13 @@ def evaluate_checkpoint(
 
     model = get_model(metadata.input_dim, metadata.num_classes,
                       model_type=model_type).to(device)
-    state_dict = torch.load(checkpoint_path, map_location=device)
+    _sealed_dir = os.path.join(os.path.dirname(__file__), "..", "tee", "sealed_storage")
+    sys.path.insert(0, os.path.abspath(_sealed_dir))
+    try:
+        from sealed_storage import load_checkpoint_state_dict  # noqa: E402
+        state_dict = load_checkpoint_state_dict(checkpoint_path, map_location=device)
+    except ImportError:
+        state_dict = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(state_dict, strict=True)
 
     criterion = nn.CrossEntropyLoss(

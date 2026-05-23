@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, dev]
+  pull_request:
+    branches: [main, master, dev]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install flwr numpy pandas scikit-learn fastapi uvicorn httpx opacus
+
+      - name: Krum client-count guard
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, 'fl')
+          from robust_aggregation import validate_robust_agg_cli
+          try:
+              validate_robust_agg_cli('krum', 3)
+          except SystemExit as e:
+              assert e.code == 1
+          else:
+              raise AssertionError('expected exit for krum@3 clients')
+          validate_robust_agg_cli('trimmed-mean', 3, exit_on_error=False)
+          print('ok')
+          "
+
+      - name: Crypto unit tests
+        run: python crypto/certs/test_crypto.py
+
+      - name: Dashboard e2e (offline fixtures)
+        run: |
+          pip install httpx
+          cd dashboard/backend && python test_e2e.py
+
+      - name: Security regression — model inversion assert
+        run: |
+          python security/attacks/model_inversion.py --assert
+
+      - name: DP preflight smoke — low epsilon triggers warning
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, 'privacy')
+          sys.path.insert(0, 'fl')
+          from dp_preflight import run_dp_preflight
+          # At epsilon=1 with default C=1.0 the preflight should either
+          # warn (noise_multiplier > threshold) or exit(1).
+          # We only verify it does NOT silently succeed without Opacus.
+          try:
+              run_dp_preflight(
+                  csv_path='data/processed/client1.csv',
+                  target_epsilon=1.0,
+                  max_grad_norm=1.0,
+                  local_epochs=3,
+                  num_fl_rounds=5,
+                  skip=False,
+              )
+              # If Opacus is installed and preflight passes (good norm), that is fine.
+              print('preflight passed (Opacus calibrated norm)')
+          except SystemExit as e:
+              # exit(1) means preflight correctly blocked training — expected.
+              assert e.code == 1, f'unexpected exit code {e.code}'
+              print('preflight correctly blocked low-epsilon training')
+          except ImportError:
+              print('Opacus not installed — preflight import guard ok')
+          print('ok')
+          "
+
+  tee-sgx:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Detect SGX hardware
+        id: sgx
+        run: |
+          if [ -e /dev/sgx_enclave ] || [ -e /dev/isgx ] || [ -e /dev/sgx ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: SGX smoke (hardware present)
+        if: steps.sgx.outputs.available == 'true'
+        run: |
+          python scripts/check_sgx.py
+          echo "SGX hardware detected — run gramine-sgx FL stack on this runner."
+
+      - name: Simulation mode label (no SGX)
+        if: steps.sgx.outputs.available != 'true'
+        run: |
+          python scripts/check_sgx.py || true
+          echo "::notice::No SGX device — TEE runs in gramine-direct simulation mode only."

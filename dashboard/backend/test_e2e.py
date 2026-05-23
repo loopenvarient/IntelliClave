@@ -51,7 +51,13 @@ except ImportError:
 
 # Import the app — this also imports torch and the model
 try:
-    from main import app, _query_log
+    from main import (
+        app,
+        _rate_limiter,
+        _budget_store,
+        RATE_LIMIT_MAX,
+        LIFETIME_BUDGET_DEFAULT,
+    )
 except ImportError as e:
     print(f"ERROR: Could not import dashboard app: {e}")
     print("       Run this script from the dashboard/backend/ directory")
@@ -59,6 +65,14 @@ except ImportError as e:
     sys.exit(1)
 
 client = TestClient(app, raise_server_exceptions=False)
+_TEST_CLIENT_IP = "testclient"
+
+
+def _reset_limits(client_ip: str = _TEST_CLIENT_IP) -> None:
+    """Clear in-memory rate-limit window and restore lifetime budget for tests."""
+    if hasattr(_rate_limiter, "_log"):
+        _rate_limiter._log.clear()
+    _budget_store.reset(client_ip, LIFETIME_BUDGET_DEFAULT)
 
 
 # ── Helper ─────────────────────────────────────────────────────────────────────
@@ -137,10 +151,10 @@ check(
 r = client.get("/query_stats")
 body = r.json() if r.status_code == 200 else {}
 check(
-    "GET /query_stats → 200 + limit + remaining",
+    "GET /query_stats → 200 + rate limit + budget fields",
     r.status_code == 200
-    and "limit" in body
-    and "remaining" in body,
+    and "rate_limit_max" in body
+    and "lifetime_budget_remaining" in body,
     f"status={r.status_code} body={body}",
 )
 
@@ -218,18 +232,18 @@ check(
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 11: Rate limiter — 101 requests → 429
 # ─────────────────────────────────────────────────────────────────────────────
-# Reset the rate limit log for a clean test
-_query_log.clear()
+_reset_limits()
 last_status = None
-for i in range(101):
+for i in range(RATE_LIMIT_MAX + 1):
     r = client.post("/predict", json={"features": features})
     last_status = r.status_code
 check(
-    "POST /predict × 101 → rate limit triggers 429",
+    f"POST /predict × {RATE_LIMIT_MAX + 1} → rate limit triggers 429",
     last_status == 429,
-    f"last response status={last_status} (expected 429 after 100 requests)",
+    f"last response status={last_status} "
+    f"(expected 429 after {RATE_LIMIT_MAX} requests)",
 )
-_query_log.clear()  # reset after test
+_reset_limits()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 12: GET /attacks → attack summaries
@@ -250,13 +264,16 @@ check(
 # ─────────────────────────────────────────────────────────────────────────────
 r = client.get("/privacy_log")
 body = r.json() if r.status_code == 200 else {}
+_log = body.get("log", body) if isinstance(body, dict) else body
+_first = _log[0] if isinstance(_log, list) and _log else {}
+_has_epsilon = "epsilon" in _first or "epsilon_cumulative" in _first
 check(
-    "GET /privacy_log → 200 + list with epsilon entries",
+    "GET /privacy_log → 200 + epsilon entries",
     r.status_code == 200
-    and isinstance(body, list)
-    and len(body) > 0
-    and "epsilon" in body[0],
-    f"status={r.status_code} entries={len(body) if isinstance(body, list) else 'N/A'}",
+    and isinstance(_log, list)
+    and len(_log) > 0
+    and _has_epsilon,
+    f"status={r.status_code} entries={len(_log) if isinstance(_log, list) else 'N/A'}",
 )
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -81,7 +81,7 @@ model, optimizer, dataloader = privacy_engine.make_private_with_epsilon(
     epochs=1,
     target_epsilon=10.0,
     target_delta=1e-3,
-    max_grad_norm=1.0,
+    max_grad_norm=2.0,
 )
 print("OK")
 

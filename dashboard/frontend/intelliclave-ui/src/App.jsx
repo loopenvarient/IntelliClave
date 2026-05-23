@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import './App.css'
 
-const API = 'http://localhost:8001'
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 
 // ── Fallback data (shown when backend is offline) ─────────────────────────────
 const DUMMY_ROUNDS = [
@@ -48,12 +48,13 @@ const DUMMY_STATUS = {
 const DUMMY_ATTESTATION = {
   tee_verified: true,
   status: 'VERIFIED',
-  platform: 'Intel SGX (simulated)',
+  platform: 'Intel SGX (simulated — no hardware enclave)',
   enclave_id: 'intelliclave-enclave-v1',
   integrity_hash: '574d8f62a9632715',
   mrenclave: '574d8f62a9632715766d54e1fc27e299a0684220f87f6854b3c135ef345cbcfe',
   attestation_time: '2026-05-03T15:05:08Z',
   mode: 'gramine-direct',
+  simulation_mode: true,
   environment: 'WSL2',
 }
 
@@ -291,15 +292,32 @@ function TeePanel({ teeData }) {
 function AttestationPanel({ attestation }) {
   const att      = attestation ?? DUMMY_ATTESTATION
   const verified = att.tee_verified === true && att.status === 'VERIFIED'
-  const statusColor = verified ? 'var(--green)' : 'var(--red)'
-  const statusIcon  = verified ? '✓' : '✗'
+  const simMode  = att.simulation_mode === true || att.mode === 'gramine-direct'
+  const statusColor = verified ? (simMode ? 'var(--amber)' : 'var(--green)') : 'var(--red)'
+  const statusIcon  = verified ? (simMode ? '~' : '✓') : '✗'
+  const statusLabel = verified ? (simMode ? 'SIMULATION' : att.status) : att.status
 
   return (
     <Panel title="TEE Attestation" tag={att.mode ?? 'gramine-direct'}>
       <div className="att-status" style={{ color: statusColor }}>
         <span className="att-icon">{statusIcon}</span>
-        <span className="att-label">{att.status}</span>
+        <span className="att-label">{statusLabel}</span>
       </div>
+      {simMode && (
+        <div style={{
+          background: 'rgba(245,166,35,0.10)',
+          border: '1px solid rgba(245,166,35,0.35)',
+          borderRadius: '6px',
+          padding: '6px 10px',
+          marginTop: '8px',
+          fontSize: '0.74rem',
+          color: 'var(--amber)',
+          lineHeight: 1.4,
+        }}>
+          SIMULATION MODE: gramine-direct provides no hardware isolation.
+          Quotes are software-computed. Use gramine-sgx for production.
+        </div>
+      )}
       <table className="stat-table" style={{ marginTop: 12 }}>
         <tbody>
           <tr>
@@ -362,6 +380,9 @@ export default function App() {
   const [attestation, setAttestation] = useState(DUMMY_ATTESTATION)
   const [lastPoll,    setLastPoll]    = useState(null)
   const [backendUp,   setBackendUp]   = useState(false)
+  const [dataSource,  setDataSource]  = useState('pre-recorded')
+  const [freshnessNote, setFreshnessNote] = useState('')
+  const [staleHours, setStaleHours] = useState(null)
 
   useEffect(() => {
     const poll = async () => {
@@ -377,6 +398,11 @@ export default function App() {
         setRounds(r.data.rounds ?? DUMMY_ROUNDS)
         setAttestation(a.data)
         setBackendUp(true)
+        setDataSource(
+          s.data.training_freshness ?? s.data.data_source ?? r.data.training_freshness ?? 'unknown'
+        )
+        setFreshnessNote(s.data.freshness_note ?? s.data.data_source_note ?? '')
+        setStaleHours(s.data.stale_hours ?? null)
 
         // Per-class F1 — convert object → array for Recharts
         if (r.data.per_class_f1) {
@@ -423,10 +449,28 @@ export default function App() {
 
   // TEE badge — wired to live attestation data
   const attVerified = attestation?.tee_verified === true && attestation?.status === 'VERIFIED'
-  const teeBadgeColor = attVerified ? 'rgba(62,207,142,0.1)' : 'rgba(224,82,82,0.1)'
-  const teeBorderColor = attVerified ? 'rgba(62,207,142,0.3)' : 'rgba(224,82,82,0.3)'
-  const teeTextColor = attVerified ? 'var(--green)' : 'var(--red)'
-  const teeBadgeText = attVerified ? '⬡ TEE VERIFIED' : '⬡ TEE UNVERIFIED'
+  const teeSim = attestation?.simulation_mode === true
+    || attestation?.mode === 'gramine-direct'
+  const teeBadgeColor = !attVerified
+    ? 'rgba(224,82,82,0.1)'
+    : teeSim
+      ? 'rgba(245,166,35,0.12)'
+      : 'rgba(62,207,142,0.1)'
+  const teeBorderColor = !attVerified
+    ? 'rgba(224,82,82,0.3)'
+    : teeSim
+      ? 'rgba(245,166,35,0.35)'
+      : 'rgba(62,207,142,0.3)'
+  const teeTextColor = !attVerified
+    ? 'var(--red)'
+    : teeSim
+      ? 'var(--amber)'
+      : 'var(--green)'
+  const teeBadgeText = !attVerified
+    ? '⬡ TEE UNVERIFIED'
+    : teeSim
+      ? '⬡ TEE SIMULATION'
+      : '⬡ TEE VERIFIED (SGX)'
 
   return (
     <div className="layout">
@@ -435,7 +479,49 @@ export default function App() {
         <div className="topbar">
           <span className="topbar-title">Overview</span>
           <div className="topbar-right">
-            {/* TEE badge — wired to /attestation API */}
+            {/* Data source indicator — distinguishes live from pre-recorded */}
+            {backendUp && (() => {
+              const f = dataSource
+              const isLive = f === 'live' || f === 'training'
+              const isStale = f === 'stale'
+              const badgeColor = isLive ? 'var(--green)' : isStale ? 'var(--amber)' : 'var(--muted)'
+              const badgeBg = isLive
+                ? 'rgba(62,207,142,0.12)'
+                : isStale
+                  ? 'rgba(245,166,35,0.12)'
+                  : 'rgba(120,120,120,0.12)'
+              const badgeBorder = isLive
+                ? 'rgba(62,207,142,0.35)'
+                : isStale
+                  ? 'rgba(245,166,35,0.35)'
+                  : 'rgba(120,120,120,0.35)'
+              let label = '○ NO DATA'
+              if (f === 'live') label = '● LIVE'
+              else if (f === 'training') label = '● TRAINING'
+              else if (f === 'stale') {
+                const h = staleHours != null ? Math.round(staleHours) : '?'
+                label = `○ STALE (${h}h ago)`
+              } else if (f === 'pre-recorded') label = '○ PRE-RECORDED'
+              return (
+                <div
+                  className="data-source-badge"
+                  style={{
+                    background: badgeBg,
+                    border: `1px solid ${badgeBorder}`,
+                    color: badgeColor,
+                    borderRadius: '6px',
+                    padding: '3px 10px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    letterSpacing: '0.03em',
+                    marginRight: '8px',
+                  }}
+                  title={freshnessNote || 'Training data freshness'}
+                >
+                  {label}
+                </div>
+              )
+            })()}
             <div
               className="tee-badge"
               style={{ background: teeBadgeColor, borderColor: teeBorderColor, color: teeTextColor }}

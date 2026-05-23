@@ -37,6 +37,7 @@ FILES=(
   "$SCRIPT_DIR/deployments/fl-client-1.yaml"
   "$SCRIPT_DIR/deployments/fl-client-2.yaml"
   "$SCRIPT_DIR/deployments/fl-client-3.yaml"
+  "$SCRIPT_DIR/deployments/redis.yaml"
   "$SCRIPT_DIR/deployments/dashboard.yaml"
 )
 

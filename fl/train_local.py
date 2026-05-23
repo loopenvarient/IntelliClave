@@ -86,7 +86,7 @@ def train_local(
     use_class_weights: bool = True,
     use_dp: bool = False,
     target_epsilon: float = 10.0,
-    max_grad_norm: float = 1.0,
+    max_grad_norm: float = 2.0,
     model_type: str = "mlp",
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -205,8 +205,8 @@ if __name__ == "__main__":
                         help="Enable Differential Privacy training via Opacus.")
     parser.add_argument("--epsilon", type=float, default=10.0,
                         help="Target epsilon (privacy budget). Default=10.0.")
-    parser.add_argument("--max-grad-norm", type=float, default=1.0,
-                        help="Gradient clipping threshold for DP-SGD. Default=1.0.")
+    parser.add_argument("--max-grad-norm", type=float, default=2.0,
+                        help="Gradient clipping threshold for DP-SGD. Default=2.0 (sweep-optimised for eps=10).")
 
     args = parser.parse_args()
 

@@ -1,386 +1,93 @@
 {
-  "1": {
-    "label": "client1 (FitLife)",
-    "n_folds": 5,
-    "epochs": 10,
-    "n_samples": 3105,
+  "federated_loocv": {
+    "label": "federated (leave-one-client-out)",
+    "mode": "federated",
+    "n_clients": 3,
+    "n_folds": 3,
+    "epochs": 5,
     "folds": [
       {
-        "accuracy": 0.961353,
-        "macro_f1": 0.961126,
-        "auc_roc": 0.997745,
+        "accuracy": 0.905314,
+        "macro_f1": 0.901954,
+        "auc_roc": 0.994261,
         "per_class_f1": {
-          "WALKING": 0.982906,
-          "WALKING_UPSTAIRS": 0.99,
-          "WALKING_DOWNSTAIRS": 0.989011,
-          "SITTING": 0.90099,
-          "STANDING": 0.903846,
-          "LAYING": 1.0
+          "class_1": 0.947707,
+          "class_2": 0.860068,
+          "class_3": 0.904564,
+          "class_4": 0.851351,
+          "class_5": 0.848963,
+          "class_6": 0.99907
         },
-        "fold": 1
+        "fold": 1,
+        "val_client": "client1",
+        "train_clients": [
+          "client2",
+          "client3"
+        ],
+        "val_n_samples": 3105,
+        "train_n_samples": 7194
       },
       {
-        "accuracy": 0.971014,
-        "macro_f1": 0.970731,
-        "auc_roc": 0.999058,
+        "accuracy": 0.906888,
+        "macro_f1": 0.903903,
+        "auc_roc": 0.990298,
         "per_class_f1": {
-          "WALKING": 1.0,
-          "WALKING_UPSTAIRS": 1.0,
-          "WALKING_DOWNSTAIRS": 1.0,
-          "SITTING": 0.912621,
-          "STANDING": 0.911765,
-          "LAYING": 1.0
+          "class_1": 0.90625,
+          "class_2": 0.872947,
+          "class_3": 0.883178,
+          "class_4": 0.869333,
+          "class_5": 0.894737,
+          "class_6": 0.996974
         },
-        "fold": 2
+        "fold": 2,
+        "val_client": "client2",
+        "train_clients": [
+          "client1",
+          "client3"
+        ],
+        "val_n_samples": 3426,
+        "train_n_samples": 6873
       },
       {
-        "accuracy": 0.961353,
-        "macro_f1": 0.960648,
-        "auc_roc": 0.995452,
+        "accuracy": 0.93551,
+        "macro_f1": 0.935487,
+        "auc_roc": 0.99583,
         "per_class_f1": {
-          "WALKING": 0.995816,
-          "WALKING_UPSTAIRS": 0.994975,
-          "WALKING_DOWNSTAIRS": 0.988889,
-          "SITTING": 0.884211,
-          "STANDING": 0.9,
-          "LAYING": 1.0
+          "class_1": 0.982609,
+          "class_2": 0.925926,
+          "class_3": 0.927273,
+          "class_4": 0.885318,
+          "class_5": 0.891799,
+          "class_6": 1.0
         },
-        "fold": 3
-      },
-      {
-        "accuracy": 0.966184,
-        "macro_f1": 0.965821,
-        "auc_roc": 0.997514,
-        "per_class_f1": {
-          "WALKING": 0.995781,
-          "WALKING_UPSTAIRS": 0.990099,
-          "WALKING_DOWNSTAIRS": 0.994413,
-          "SITTING": 0.907317,
-          "STANDING": 0.907317,
-          "LAYING": 1.0
-        },
-        "fold": 4
-      },
-      {
-        "accuracy": 0.958132,
-        "macro_f1": 0.956983,
-        "auc_roc": 0.997182,
-        "per_class_f1": {
-          "WALKING": 0.995781,
-          "WALKING_UPSTAIRS": 0.995025,
-          "WALKING_DOWNSTAIRS": 0.994475,
-          "SITTING": 0.861878,
-          "STANDING": 0.894737,
-          "LAYING": 1.0
-        },
-        "fold": 5
+        "fold": 3,
+        "val_client": "client3",
+        "train_clients": [
+          "client1",
+          "client2"
+        ],
+        "val_n_samples": 3768,
+        "train_n_samples": 6531
       }
     ],
     "summary": {
       "accuracy": {
-        "mean": 0.963607,
-        "std": 0.004509,
-        "min": 0.958132,
-        "max": 0.971014
+        "mean": 0.915904,
+        "std": 0.013878,
+        "min": 0.905314,
+        "max": 0.93551
       },
       "macro_f1": {
-        "mean": 0.963062,
-        "std": 0.004753,
-        "min": 0.956983,
-        "max": 0.970731
+        "mean": 0.913781,
+        "std": 0.015369
       },
       "auc_roc": {
-        "mean": 0.99739,
-        "std": 0.00116
-      }
-    }
-  },
-  "2": {
-    "label": "client2 (MediTrack)",
-    "n_folds": 5,
-    "epochs": 10,
-    "n_samples": 3426,
-    "folds": [
-      {
-        "accuracy": 0.978134,
-        "macro_f1": 0.979689,
-        "auc_roc": 0.999123,
-        "per_class_f1": {
-          "WALKING": 0.995475,
-          "WALKING_UPSTAIRS": 0.995122,
-          "WALKING_DOWNSTAIRS": 1.0,
-          "SITTING": 0.940171,
-          "STANDING": 0.947368,
-          "LAYING": 1.0
-        },
-        "fold": 1
+        "mean": 0.993463,
+        "std": 0.002328
       },
-      {
-        "accuracy": 0.976642,
-        "macro_f1": 0.978399,
-        "auc_roc": 0.998895,
-        "per_class_f1": {
-          "WALKING": 0.995475,
-          "WALKING_UPSTAIRS": 0.995074,
-          "WALKING_DOWNSTAIRS": 1.0,
-          "SITTING": 0.937759,
-          "STANDING": 0.942085,
-          "LAYING": 1.0
-        },
-        "fold": 2
-      },
-      {
-        "accuracy": 0.969343,
-        "macro_f1": 0.971437,
-        "auc_roc": 0.998375,
-        "per_class_f1": {
-          "WALKING": 0.995475,
-          "WALKING_UPSTAIRS": 1.0,
-          "WALKING_DOWNSTAIRS": 0.994536,
-          "SITTING": 0.913043,
-          "STANDING": 0.929368,
-          "LAYING": 0.996198
-        },
-        "fold": 3
-      },
-      {
-        "accuracy": 0.972263,
-        "macro_f1": 0.973933,
-        "auc_roc": 0.998694,
-        "per_class_f1": {
-          "WALKING": 0.990909,
-          "WALKING_UPSTAIRS": 0.995074,
-          "WALKING_DOWNSTAIRS": 0.994595,
-          "SITTING": 0.92766,
-          "STANDING": 0.935361,
-          "LAYING": 1.0
-        },
-        "fold": 4
-      },
-      {
-        "accuracy": 0.973723,
-        "macro_f1": 0.974811,
-        "auc_roc": 0.998869,
-        "per_class_f1": {
-          "WALKING": 0.990826,
-          "WALKING_UPSTAIRS": 0.980769,
-          "WALKING_DOWNSTAIRS": 0.994536,
-          "SITTING": 0.93617,
-          "STANDING": 0.946565,
-          "LAYING": 1.0
-        },
-        "fold": 5
-      }
-    ],
-    "summary": {
-      "accuracy": {
-        "mean": 0.974021,
-        "std": 0.003126,
-        "min": 0.969343,
-        "max": 0.978134
-      },
-      "macro_f1": {
-        "mean": 0.975654,
-        "std": 0.003009,
-        "min": 0.971437,
-        "max": 0.979689
-      },
-      "auc_roc": {
-        "mean": 0.998791,
-        "std": 0.000249
-      }
-    }
-  },
-  "3": {
-    "label": "client3 (CareWatch)",
-    "n_folds": 5,
-    "epochs": 10,
-    "n_samples": 3768,
-    "folds": [
-      {
-        "accuracy": 0.985411,
-        "macro_f1": 0.986984,
-        "auc_roc": 0.999188,
-        "per_class_f1": {
-          "WALKING": 1.0,
-          "WALKING_UPSTAIRS": 1.0,
-          "WALKING_DOWNSTAIRS": 1.0,
-          "SITTING": 0.959707,
-          "STANDING": 0.962199,
-          "LAYING": 1.0
-        },
-        "fold": 1
-      },
-      {
-        "accuracy": 0.96817,
-        "macro_f1": 0.97086,
-        "auc_roc": 0.998779,
-        "per_class_f1": {
-          "WALKING": 0.995671,
-          "WALKING_UPSTAIRS": 0.990566,
-          "WALKING_DOWNSTAIRS": 0.995025,
-          "SITTING": 0.92029,
-          "STANDING": 0.923611,
-          "LAYING": 1.0
-        },
-        "fold": 2
-      },
-      {
-        "accuracy": 0.96817,
-        "macro_f1": 0.970748,
-        "auc_roc": 0.998229,
-        "per_class_f1": {
-          "WALKING": 1.0,
-          "WALKING_UPSTAIRS": 0.990741,
-          "WALKING_DOWNSTAIRS": 0.989899,
-          "SITTING": 0.919708,
-          "STANDING": 0.924138,
-          "LAYING": 1.0
-        },
-        "fold": 3
-      },
-      {
-        "accuracy": 0.969456,
-        "macro_f1": 0.972328,
-        "auc_roc": 0.999013,
-        "per_class_f1": {
-          "WALKING": 0.995708,
-          "WALKING_UPSTAIRS": 1.0,
-          "WALKING_DOWNSTAIRS": 0.994924,
-          "SITTING": 0.916667,
-          "STANDING": 0.926667,
-          "LAYING": 1.0
-        },
-        "fold": 4
-      },
-      {
-        "accuracy": 0.977424,
-        "macro_f1": 0.979241,
-        "auc_roc": 0.998468,
-        "per_class_f1": {
-          "WALKING": 1.0,
-          "WALKING_UPSTAIRS": 0.990654,
-          "WALKING_DOWNSTAIRS": 0.994975,
-          "SITTING": 0.942446,
-          "STANDING": 0.947368,
-          "LAYING": 1.0
-        },
-        "fold": 5
-      }
-    ],
-    "summary": {
-      "accuracy": {
-        "mean": 0.973726,
-        "std": 0.006785,
-        "min": 0.96817,
-        "max": 0.985411
-      },
-      "macro_f1": {
-        "mean": 0.976032,
-        "std": 0.006303,
-        "min": 0.970748,
-        "max": 0.986984
-      },
-      "auc_roc": {
-        "mean": 0.998735,
-        "std": 0.00035
-      }
-    }
-  },
-  "combined": {
-    "label": "combined (all clients)",
-    "n_folds": 5,
-    "epochs": 10,
-    "n_samples": 10299,
-    "folds": [
-      {
-        "accuracy": 0.969417,
-        "macro_f1": 0.970784,
-        "auc_roc": 0.998426,
-        "per_class_f1": {
-          "WALKING": 0.997101,
-          "WALKING_UPSTAIRS": 0.988691,
-          "WALKING_DOWNSTAIRS": 0.991055,
-          "SITTING": 0.921348,
-          "STANDING": 0.926509,
-          "LAYING": 1.0
-        },
-        "fold": 1
-      },
-      {
-        "accuracy": 0.971359,
-        "macro_f1": 0.972569,
-        "auc_roc": 0.998753,
-        "per_class_f1": {
-          "WALKING": 0.994203,
-          "WALKING_UPSTAIRS": 0.988581,
-          "WALKING_DOWNSTAIRS": 0.99115,
-          "SITTING": 0.928671,
-          "STANDING": 0.932806,
-          "LAYING": 1.0
-        },
-        "fold": 2
-      },
-      {
-        "accuracy": 0.963592,
-        "macro_f1": 0.964762,
-        "auc_roc": 0.998136,
-        "per_class_f1": {
-          "WALKING": 0.985465,
-          "WALKING_UPSTAIRS": 0.982343,
-          "WALKING_DOWNSTAIRS": 0.983957,
-          "SITTING": 0.91516,
-          "STANDING": 0.921647,
-          "LAYING": 1.0
-        },
-        "fold": 3
-      },
-      {
-        "accuracy": 0.973786,
-        "macro_f1": 0.974568,
-        "auc_roc": 0.998989,
-        "per_class_f1": {
-          "WALKING": 0.995658,
-          "WALKING_UPSTAIRS": 0.990291,
-          "WALKING_DOWNSTAIRS": 0.983957,
-          "SITTING": 0.93617,
-          "STANDING": 0.94133,
-          "LAYING": 1.0
-        },
-        "fold": 4
-      },
-      {
-        "accuracy": 0.97086,
-        "macro_f1": 0.972271,
-        "auc_roc": 0.998224,
-        "per_class_f1": {
-          "WALKING": 0.998544,
-          "WALKING_UPSTAIRS": 0.991896,
-          "WALKING_DOWNSTAIRS": 0.992908,
-          "SITTING": 0.921986,
-          "STANDING": 0.928292,
-          "LAYING": 1.0
-        },
-        "fold": 5
-      }
-    ],
-    "summary": {
-      "accuracy": {
-        "mean": 0.969803,
-        "std": 0.00341,
-        "min": 0.963592,
-        "max": 0.973786
-      },
-      "macro_f1": {
-        "mean": 0.970991,
-        "std": 0.00334,
-        "min": 0.964762,
-        "max": 0.974568
-      },
-      "auc_roc": {
-        "mean": 0.998506,
-        "std": 0.000322
-      }
-    }
+      "generalisation_gap": 0.030196,
+      "generalisation_gap_note": "Max - min accuracy across held-out clients. High gap indicates the global model underserves some clients."
+    },
+    "low_fold_warning": "Only 3 LOOCV folds \u2014 high variance; use >= 5 clients for stabler generalisation estimates."
   }
 }

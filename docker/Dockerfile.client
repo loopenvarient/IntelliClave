@@ -39,6 +39,9 @@ RUN pip install --no-cache-dir \
 # ── Project source ────────────────────────────────────────────────────────────
 COPY fl/                         ./fl/
 COPY crypto/                     ./crypto/
+COPY config/                     ./config/
+COPY tee/attestation/            ./tee/attestation/
+COPY tee/tee_mode.py             ./tee/tee_mode.py
 COPY data/class_weights.json     ./data/class_weights.json
 
 # ── Runtime environment variables ────────────────────────────────────────────

@@ -42,10 +42,11 @@ class IntelliClaveClient(fl.client.NumPyClient):
         local_epochs: int = 3,
         learning_rate: float = 1e-3,
         model_type: str = "mlp",
+        batch_size: int = 32,
         # ── DP parameters — all optional, default = DP off ───────────────────────
         use_dp: bool = False,
         target_epsilon: float = 10.0,
-        max_grad_norm: float = 1.0,
+        max_grad_norm: float = 2.0,
         num_fl_rounds: int = 10,
         # ─────────────────────────────────────────────────────────────────────────
         # ── Crypto: optional encryption of weights in transit ────────────────────
@@ -69,18 +70,62 @@ class IntelliClaveClient(fl.client.NumPyClient):
             print(f"[Client {client_id}][Crypto] WARNING: crypto requested but unavailable "
                   "— running without encryption.")
 
-        # Data loading
-        self.train_loader, self.test_loader, self.metadata = load_csv_data(csv_path)
+        # ── DP accuracy optimisations ─────────────────────────────────────────
+        # When DP is active three things help recover accuracy:
+        #
+        # 1. Larger batch size — Opacus clips and noises per-sample gradients,
+        #    then averages them. More samples per batch → better signal-to-noise
+        #    ratio before the noise is added. DP_BATCH_SIZE=64 vs default 32
+        #    reduces the effective noise_std by ~√2 at the same ε.
+        #
+        # 2. Dropout = 0.0 — DP noise already acts as strong regularisation.
+        #    Stacking Dropout(0.3) on top adds variance without adding privacy,
+        #    compounding the accuracy cost. Disable it when DP is on.
+        #
+        # 3. Higher learning rate — the gradient signal must overcome DP noise.
+        #    A 2× LR boost (1e-3 → 2e-3) helps the model learn faster per step
+        #    without destabilising non-DP training.
+        # ─────────────────────────────────────────────────────────────────────
+        if use_dp:
+            # Use the larger DP batch size from constants unless caller overrides
+            from config.constants import DP_BATCH_SIZE  # noqa: E402
+            effective_batch_size = max(batch_size, DP_BATCH_SIZE)
+            effective_lr = learning_rate * 2.0   # 2× LR for DP training
+            effective_dropout = 0.0              # disable dropout under DP
+            if effective_batch_size != batch_size:
+                print(
+                    f"[Client {client_id}][DP] Batch size: {batch_size} → "
+                    f"{effective_batch_size} (larger batch reduces DP noise_std by "
+                    f"~{1 - (batch_size/effective_batch_size)**0.5:.0%})"
+                )
+            print(
+                f"[Client {client_id}][DP] LR: {learning_rate} → {effective_lr:.4f} "
+                f"(2× boost to overcome DP noise)"
+            )
+            print(
+                f"[Client {client_id}][DP] Dropout: 0.3 → 0.0 "
+                f"(DP noise acts as regularisation)"
+            )
+        else:
+            effective_batch_size = batch_size
+            effective_lr = learning_rate
+            effective_dropout = 0.3
+
+        # Data loading — use the effective (possibly larger) batch size
+        self.train_loader, self.test_loader, self.metadata = load_csv_data(
+            csv_path, batch_size=effective_batch_size
+        )
         self.model = get_model(
             self.metadata.input_dim,
             self.metadata.num_classes,
             model_type=model_type,
+            dropout=effective_dropout,
         ).to(self.device)
         class_weights = load_class_weights(
             num_classes=self.metadata.num_classes, device=self.device
         )
         self.criterion = nn.CrossEntropyLoss(weight=class_weights)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=effective_lr)
 
         print(
             f"[Client {client_id}] ready input_dim={self.metadata.input_dim} "
@@ -135,6 +180,40 @@ class IntelliClaveClient(fl.client.NumPyClient):
                     max_grad_norm=self.max_grad_norm,
                 )
             )
+
+            # ── Pre-flight noise multiplier check ────────────────────────────
+            # Opacus computes the noise multiplier from (ε, δ, C, epochs,
+            # batch_size) together. At low ε the multiplier can be very high,
+            # causing accuracy collapse. We surface this immediately so the
+            # user can tune max_grad_norm before wasting a full training run.
+            try:
+                nm = float(self.optimizer.noise_multiplier)
+                noise_std = nm * self.max_grad_norm
+                if self.target_epsilon < 5.0 and nm > 3.0:
+                    print(
+                        f"\n[Client {self.cid}][DP] *** ACCURACY COLLAPSE WARNING ***\n"
+                        f"  target_epsilon={self.target_epsilon} is low and "
+                        f"noise_multiplier={nm:.2f} is very high.\n"
+                        f"  noise_std = {nm:.2f} x {self.max_grad_norm} = {noise_std:.2f} "
+                        f"-- gradient signal will be overwhelmed.\n"
+                        f"  Expected outcome: accuracy near random (~{100//self.metadata.num_classes}%).\n"
+                        f"  Fix: run clipping norm sweep first to find the optimal C:\n"
+                        f"    python privacy/clipping_norm_sweep.py "
+                        f"--epsilon {self.target_epsilon} "
+                        f"--csv <your_csv>\n"
+                        f"  Then re-run with --max-grad-norm <optimal_value>.\n"
+                    )
+                elif nm > 2.0:
+                    print(
+                        f"[Client {self.cid}][DP] NOTE: noise_multiplier={nm:.2f} "
+                        f"(noise_std={noise_std:.2f}). "
+                        f"Expect some accuracy degradation. "
+                        f"Run privacy/clipping_norm_sweep.py to tune if needed."
+                    )
+            except AttributeError:
+                pass
+            # ─────────────────────────────────────────────────────────────────
+
             print(
                 f"[Client {self.cid}][DP] PrivacyEngine attached: "
                 f"ε={self.target_epsilon}, δ={self.target_delta:.2e}, "
@@ -179,19 +258,19 @@ class IntelliClaveClient(fl.client.NumPyClient):
 
         accuracy, macro_f1 = evaluate(self.model, self.test_loader, self.device)
 
-        # Metrics dict
+        # Metrics dict — client_id always included for per-client tracking
         metrics = {
-            "loss": float(loss),
-            "accuracy": float(accuracy),
-            "macro_f1": float(macro_f1),
+            "client_id": self.cid,
+            "loss":      float(loss),
+            "accuracy":  float(accuracy),
+            "macro_f1":  float(macro_f1),
         }
 
         # Append epsilon to metrics if DP is active
         if self.use_dp and self.privacy_engine is not None:
             eps = self.privacy_engine.get_epsilon(delta=self.target_delta)
             metrics["epsilon"] = float(eps)
-            metrics["delta"] = float(self.target_delta)
-            metrics["client_id"] = self.cid
+            metrics["delta"]   = float(self.target_delta)
             print(
                 f"[Client {self.cid}][DP] "
                 f"loss={loss:.4f} acc={accuracy:.4f} ε={eps:.4f}"
@@ -199,6 +278,22 @@ class IntelliClaveClient(fl.client.NumPyClient):
 
         # Encrypt weights before sending to server if crypto is enabled
         outgoing_weights = self.get_parameters({})
+
+        try:
+            from update_compression import maybe_compress_updates  # noqa: E402
+
+            outgoing_weights, comp_stats = maybe_compress_updates(
+                outgoing_weights, config or {}
+            )
+            if comp_stats.get("compression_enabled"):
+                metrics["compression_ratio"] = comp_stats.get("compression_ratio")
+                print(
+                    f"[Client {self.cid}][Compress] Top-K {comp_stats.get('top_k_fraction', 0):.0%} "
+                    f"— {comp_stats.get('compression_ratio', 0):.1%} non-zero weights"
+                )
+        except ImportError:
+            pass
+
         if self.use_crypto and self._crypto_ctx is not None:
             payload = self._crypto_ctx.encrypt_weights(outgoing_weights)
             payload_bytes = json.dumps(payload).encode()
@@ -242,9 +337,12 @@ def start_client(
     client_id: str,
     server_address: str = "127.0.0.1:8080",
     model_type: str = "mlp",
+    local_epochs: int = 3,
+    learning_rate: float = 1e-3,
+    batch_size: int = 32,
     use_dp: bool = False,
     target_epsilon: float = 10.0,
-    max_grad_norm: float = 1.0,
+    max_grad_norm: float = 2.0,
     num_fl_rounds: int = 10,
     use_crypto: bool = False,
     server_public_pem: bytes = None,
@@ -255,6 +353,9 @@ def start_client(
             csv_path=csv_path,
             client_id=client_id,
             model_type=model_type,
+            local_epochs=local_epochs,
+            learning_rate=learning_rate,
+            batch_size=batch_size,
             use_dp=use_dp,
             target_epsilon=target_epsilon,
             max_grad_norm=max_grad_norm,
@@ -278,7 +379,8 @@ if __name__ == "__main__":
                         help="DataLoader batch size (default: 32).")
     parser.add_argument("--dp", action="store_true", help="Enable Differential Privacy via Opacus.")
     parser.add_argument("--epsilon", type=float, default=10.0, help="Target epsilon (privacy budget). Default=10.0.")
-    parser.add_argument("--max-grad-norm", type=float, default=1.0, help="Gradient clipping norm for DP-SGD. Default=1.0.")
+    parser.add_argument("--max-grad-norm", type=float, default=2.0,
+                        help="Gradient clipping norm for DP-SGD. Default=2.0 (sweep-optimised for eps=10).")
     parser.add_argument("--model-type", default="mlp",
                         choices=["mlp", "resnet-tabular", "transformer-tabular"],
                         help="Model architecture (default: mlp).")

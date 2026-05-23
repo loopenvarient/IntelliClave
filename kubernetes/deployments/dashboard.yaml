@@ -25,8 +25,26 @@ spec:
         - containerPort: 8001
           name: http
         env:
+        - name: REDIS_URL
+          value: "redis://redis:6379/0"
+        - name: REQUIRE_REDIS
+          value: "true"
+        - name: DASHBOARD_STATE_DIR
+          value: "/app/results"
         - name: RESULTS_DIR
           value: "/app/results"
+        - name: CORS_ORIGINS
+          value: "http://localhost:3000"
+        - name: INFERENCE_EPSILON
+          value: "4.0"
+        - name: LIFETIME_QUERY_BUDGET
+          value: "10000"
+        - name: RATE_LIMIT_MAX
+          value: "100"
+        - name: RATE_LIMIT_WINDOW
+          value: "60"
+        - name: REQUIRE_SEALED_CHECKPOINTS
+          value: "true"
         resources:
           requests:
             cpu: "100m"

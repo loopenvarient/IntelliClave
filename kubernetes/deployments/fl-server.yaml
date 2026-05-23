@@ -27,6 +27,14 @@ spec:
         env:
         - name: ROUNDS
           value: "20"
+        - name: SEAL_REMOVE_PLAINTEXT
+          value: "true"
+        - name: SAVE_DIR
+          value: "/app/results/fl_rounds"
+        - name: DASHBOARD_STATE_DIR
+          value: "/app/results"
+        - name: SEAL_REMOVE_PLAINTEXT
+          value: "true"
         resources:
           requests:
             cpu: "500m"

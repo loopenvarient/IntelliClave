@@ -37,11 +37,14 @@ from fl_server import (  # noqa: E402
     monitor_client_distributions,
     weighted_average,
 )
+from robust_aggregation import validate_robust_agg_cli  # noqa: E402
 from model import get_model  # noqa: E402
 from train_local import evaluate, train_one_epoch  # noqa: E402
 
 
 NUM_ROUNDS  = 10
+# Default 3 matches the shipped UCI HAR demo (client1–3.csv).
+# Krum / Multi-Krum require >= 5 clients — see fl.robust_aggregation.MIN_CLIENTS_FOR_KRUM.
 NUM_CLIENTS = 3
 
 
@@ -97,7 +100,12 @@ class SimClient(fl.client.NumPyClient):
         return (
             self.get_parameters({}),
             len(self.train_loader.dataset),
-            {"loss": float(loss), "accuracy": float(accuracy), "macro_f1": float(macro_f1)},
+            {
+                "client_id": self.cid,   # required for per-client tracking
+                "loss":      float(loss),
+                "accuracy":  float(accuracy),
+                "macro_f1":  float(macro_f1),
+            },
         )
 
     def evaluate(self, params, config):
@@ -133,6 +141,8 @@ def main(
     early_stopping_patience: int = 0,
     early_stopping_metric: str = "loss",
     monitor_distributions: bool = True,
+    robust_agg: str = "fedavg",
+    byzantine_fraction: float = 0.33,
 ):
     # Auto-generate timestamped save dir
     if not save_dir:
@@ -180,6 +190,8 @@ def main(
         early_stopping_patience=early_stopping_patience,
         early_stopping_metric=early_stopping_metric,
         model_type=model_type,
+        robust_agg=robust_agg,
+        byzantine_fraction=byzantine_fraction,
     )
 
     try:
@@ -259,7 +271,61 @@ if __name__ == "__main__":
                         help="Metric to monitor for early stopping.")
     parser.add_argument("--no-distribution-monitor", action="store_true",
                         help="Skip the pre-training distribution report.")
+    parser.add_argument(
+        "--robust-agg", default="fedavg",
+        choices=["fedavg", "krum", "multi-krum", "trimmed-mean", "median"],
+        help="Byzantine-robust aggregation (default: fedavg). "
+             "krum/multi-krum require --clients >= 5 (n>=2f+3 for f=1); "
+             "use trimmed-mean or median for the 3-client demo.",
+    )
+    parser.add_argument(
+        "--byzantine-fraction", type=float, default=0.33,
+        help="Assumed fraction of Byzantine clients for Krum/Trimmed Mean (default: 0.33).",
+    )
+    parser.add_argument(
+        "--dp", action="store_true",
+        help="Enable Differential Privacy preflight check (Opacus). "
+             "Validates clipping norm before training at low epsilon.",
+    )
+    parser.add_argument(
+        "--epsilon", type=float, default=10.0,
+        help="DP target epsilon for preflight check (default: 10.0). "
+             "Values < 5 trigger a clipping norm warning or auto-sweep.",
+    )
+    parser.add_argument(
+        "--max-grad-norm", type=float, default=2.0,
+        help="DP gradient clipping norm C (default: 2.0, sweep-optimised for eps=10). "
+             "Tune with privacy/clipping_norm_sweep.py before low epsilon.",
+    )
+    parser.add_argument(
+        "--skip-dp-preflight", action="store_true",
+        help="Skip low-epsilon clipping norm preflight (not recommended).",
+    )
+    parser.add_argument(
+        "--auto-clipping-sweep", action="store_true",
+        help="At epsilon<5, run a quick clipping norm sweep if calibration fails.",
+    )
     args = parser.parse_args()
+    validate_robust_agg_cli(args.robust_agg, args.clients)
+
+    # DP preflight — warn/abort before training if low-epsilon + bad clipping norm
+    if args.dp:
+        _privacy_dir = os.path.join(os.path.dirname(__file__), "..", "privacy")
+        sys.path.insert(0, os.path.abspath(_privacy_dir))
+        from dp_preflight import run_dp_preflight  # noqa: E402
+
+        csv_files_for_preflight = get_default_client_csvs(args.clients)
+        # Run preflight against the first client CSV as a representative sample
+        run_dp_preflight(
+            csv_path=csv_files_for_preflight[0],
+            target_epsilon=args.epsilon,
+            max_grad_norm=args.max_grad_norm,
+            local_epochs=args.local_epochs,
+            num_fl_rounds=args.rounds,
+            batch_size=args.batch_size,
+            auto_clipping_sweep=args.auto_clipping_sweep,
+            skip=args.skip_dp_preflight,
+        )
     main(
         num_rounds=args.rounds,
         num_clients=args.clients,
@@ -274,4 +340,6 @@ if __name__ == "__main__":
         early_stopping_patience=args.early_stopping_patience,
         early_stopping_metric=args.early_stopping_metric,
         monitor_distributions=not args.no_distribution_monitor,
+        robust_agg=args.robust_agg,
+        byzantine_fraction=args.byzantine_fraction,
     )

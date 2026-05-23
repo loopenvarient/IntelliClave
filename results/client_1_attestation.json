@@ -1,0 +1,11 @@
+{
+  "client_id": "1",
+  "tee_verified": true,
+  "attestation_time": "2026-05-23T12:54:24Z",
+  "platform": "Intel SGX (simulated)",
+  "mrenclave": "5630c9632218ff4ad2b3eb16d6ca5d9d8a7d49fbf4369851db6cd2d3ac32a66d",
+  "integrity_hash": "5630c9632218ff4a",
+  "quote_size_bytes": 218,
+  "status": "VERIFIED",
+  "mode": "gramine-direct"
+}

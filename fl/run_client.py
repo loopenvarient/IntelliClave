@@ -42,6 +42,13 @@ if __name__ == "__main__":
                         help="Enable Differential Privacy via Opacus.")
     parser.add_argument("--epsilon", type=float, default=10.0,
                         help="DP target epsilon. Default=10.0.")
+    parser.add_argument("--max-grad-norm", type=float, default=2.0,
+                        help="DP gradient clipping norm C (default: 2.0, sweep-optimised for eps=10). "
+                             "Tune with privacy/clipping_norm_sweep.py before low epsilon.")
+    parser.add_argument("--skip-dp-preflight", action="store_true",
+                        help="Skip low-ε clipping norm preflight (not recommended).")
+    parser.add_argument("--auto-clipping-sweep", action="store_true",
+                        help="At ε<5, run a quick clipping norm sweep if calibration fails.")
     parser.add_argument("--rounds", type=int, default=10,
                         help="Total FL rounds — must match server --rounds.")
     parser.add_argument("--attest", action="store_true",
@@ -69,6 +76,24 @@ if __name__ == "__main__":
             )
         csv_path = default_csvs[client_index]
 
+    max_grad_norm = args.max_grad_norm
+    if args.dp:
+        _privacy_dir = os.path.join(os.path.dirname(__file__), "..", "privacy")
+        sys.path.insert(0, os.path.abspath(_privacy_dir))
+        from dp_preflight import run_dp_preflight  # noqa: E402
+
+        max_grad_norm = run_dp_preflight(
+            csv_path=csv_path,
+            target_epsilon=args.epsilon,
+            max_grad_norm=args.max_grad_norm,
+            local_epochs=args.local_epochs,
+            num_fl_rounds=args.rounds,
+            batch_size=args.batch_size,
+            model_type=args.model_type,
+            auto_clipping_sweep=args.auto_clipping_sweep,
+            skip=args.skip_dp_preflight,
+        )
+
     # Load public key if crypto requested
     server_public_pem = None
     if args.crypto:
@@ -90,9 +115,11 @@ if __name__ == "__main__":
         model_type=args.model_type,
         local_epochs=args.local_epochs,
         learning_rate=args.lr,
+        batch_size=args.batch_size,
         use_crypto=args.crypto,
         server_public_pem=server_public_pem,
         use_dp=args.dp,
         target_epsilon=args.epsilon,
+        max_grad_norm=max_grad_norm,
         num_fl_rounds=args.rounds,
     )

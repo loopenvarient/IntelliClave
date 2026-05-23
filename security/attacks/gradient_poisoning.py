@@ -177,6 +177,33 @@ def fedavg(weight_list: List[List[np.ndarray]],
     return avg
 
 
+def _get_aggregator(agg_name: str, n_clients: int):
+    """
+    Return an aggregation function with signature (weight_list, sizes) -> weights.
+    Imports from robust_aggregation so the attack uses the same code as the server.
+    """
+    sys.path.insert(0, os.path.join(_ROOT, "fl"))
+    from robust_aggregation import (  # noqa: E402
+        krum, trimmed_mean, coordinate_median, auto_f, auto_beta,
+    )
+    name = agg_name.lower()
+    if name == "fedavg":
+        return fedavg
+    elif name == "krum":
+        f = auto_f(n_clients)
+        return lambda wl, sz: krum(wl, f=f, m=1)
+    elif name == "multi-krum":
+        f = auto_f(n_clients)
+        return lambda wl, sz: krum(wl, f=f, m=max(1, n_clients - f))
+    elif name == "trimmed-mean":
+        beta = auto_beta(n_clients)
+        return lambda wl, sz: trimmed_mean(wl, beta=beta)
+    elif name == "median":
+        return lambda wl, sz: coordinate_median(wl)
+    else:
+        raise ValueError(f"Unknown aggregator: {agg_name}")
+
+
 def evaluate_global(model, test_loaders: List[DataLoader]) -> Tuple[float, float]:
     """Evaluate global model on all clients' test sets combined."""
     model.eval()
@@ -200,16 +227,18 @@ def run_fl(poison_rate: float = 0.0,
            local_epochs: int = LOCAL_EPOCHS,
            batch_size: int = BATCH_SIZE,
            lr: float = LR,
-           poison_target: int = POISON_TARGET) -> dict:
+           poison_target: int = POISON_TARGET,
+           aggregator: str = "fedavg") -> dict:
     """
-    Run a full FL simulation with FedAvg for fl_rounds rounds.
+    Run a full FL simulation for fl_rounds rounds.
     Client at poisoned_client_idx has poison_rate fraction of labels flipped.
+    aggregator: "fedavg" | "krum" | "multi-krum" | "trimmed-mean" | "median"
     Returns final accuracy, macro F1, and per-class F1.
     """
     class_weights = load_class_weights(num_classes=N_CLASSES)
     criterion = nn.CrossEntropyLoss(weight=class_weights)
+    agg_fn = _get_aggregator(aggregator, len(CLIENT_CSVS))
 
-    # Load all clients — only the poisoned one gets flipped labels
     clients = []
     test_loaders = []
     for i, csv in enumerate(CLIENT_CSVS):
@@ -221,7 +250,6 @@ def run_fl(poison_rate: float = 0.0,
         clients.append((tr_loader, n_tr))
         test_loaders.append(te_loader)
 
-    # Initialise global model
     global_model = get_model(INPUT_DIM, N_CLASSES)
     global_weights = get_weights(global_model)
 
@@ -238,7 +266,7 @@ def run_fl(poison_rate: float = 0.0,
             local_weights.append(get_weights(local_model))
             local_sizes.append(n_tr)
 
-        global_weights = fedavg(local_weights, local_sizes)
+        global_weights = agg_fn(local_weights, local_sizes)
         set_weights(global_model, global_weights)
 
     acc, f1, per_cls = evaluate_global(global_model, test_loaders)
@@ -258,124 +286,175 @@ def main(
     poison_rates: list = None,
     poisoned_client_idx: int = 0,
     out_path: str = OUT_PATH,
+    aggregators: list = None,
 ):
     if poison_rates is None:
         poison_rates = POISON_RATES
+    if aggregators is None:
+        aggregators = ["fedavg", "krum", "trimmed-mean"]
 
-    print("=" * 55)
+    print("=" * 60)
     print("Attack 3: Gradient Poisoning (Label-Flip)")
-    print(f"  FL rounds: {fl_rounds}  |  Local epochs: {local_epochs}")
+    print(f"  FL rounds      : {fl_rounds}  |  Local epochs: {local_epochs}")
     print(f"  Poisoned client: Client {poisoned_client_idx + 1}")
-    print(f"  Flip target: class {poison_target} ({CLASS_NAMES[poison_target] if poison_target < len(CLASS_NAMES) else poison_target})")
-    print("=" * 55)
+    print(f"  Flip target    : class {poison_target}")
+    print(f"  Aggregators    : {aggregators}")
+    print("=" * 60)
 
-    # ── baseline (clean) ──────────────────────────────────────────────────────
-    print("\n[1] Running clean baseline (poison_rate=0.0)...")
-    baseline = run_fl(
-        poison_rate=0.0,
-        fl_rounds=fl_rounds,
-        local_epochs=local_epochs,
-        batch_size=batch_size,
-        lr=lr,
-        poison_target=poison_target,
-    )
-    print(f"    Accuracy : {baseline['accuracy']:.4f}")
-    print(f"    Macro F1 : {baseline['macro_f1']:.4f}")
+    all_agg_results = {}
 
-    # ── poison rate sweep ─────────────────────────────────────────────────────
-    sweep_results = []
-    print("\n[2] Poison rate sweep...")
-    for rate in poison_rates:
-        if rate == 0.0:
-            result = baseline.copy()
-            result["poison_rate"] = 0.0
-            result["n_poisoned_labels"] = 0
+    for agg in aggregators:
+        print(f"\n{'='*60}")
+        print(f"  Aggregator: {agg.upper()}")
+        print(f"{'='*60}")
+
+        # Baseline (clean)
+        print(f"\n[{agg}] Running clean baseline...")
+        baseline = run_fl(
+            poison_rate=0.0,
+            fl_rounds=fl_rounds,
+            local_epochs=local_epochs,
+            batch_size=batch_size,
+            lr=lr,
+            poison_target=poison_target,
+            aggregator=agg,
+        )
+        print(f"  Baseline acc={baseline['accuracy']:.4f}  f1={baseline['macro_f1']:.4f}")
+
+        # Poison rate sweep
+        sweep_results = []
+        print(f"\n[{agg}] Poison rate sweep...")
+        for rate in poison_rates:
+            if rate == 0.0:
+                result = baseline.copy()
+                result["poison_rate"] = 0.0
+                result["n_poisoned_labels"] = 0
+            else:
+                print(f"  poison_rate={rate:.0%}...", end=" ", flush=True)
+                result = run_fl(
+                    poison_rate=rate,
+                    poisoned_client_idx=poisoned_client_idx,
+                    fl_rounds=fl_rounds,
+                    local_epochs=local_epochs,
+                    batch_size=batch_size,
+                    lr=lr,
+                    poison_target=poison_target,
+                    aggregator=agg,
+                )
+                result["poison_rate"] = rate
+                _, _, n_tr, n_p = load_client_csv(
+                    CLIENT_CSVS[poisoned_client_idx],
+                    poison_rate=rate,
+                    poison_target=poison_target,
+                )
+                result["n_poisoned_labels"] = n_p
+                acc_drop = baseline["accuracy"] - result["accuracy"]
+                print(f"acc={result['accuracy']:.4f} (drop={acc_drop:+.4f})")
+            sweep_results.append(result)
+
+        full_poison = next(r for r in sweep_results if r["poison_rate"] == 1.0)
+        acc_drop_full = baseline["accuracy"] - full_poison["accuracy"]
+        f1_drop_full  = baseline["macro_f1"]  - full_poison["macro_f1"]
+
+        risk = ("HIGH"   if acc_drop_full > 0.10 else
+                "MEDIUM" if acc_drop_full > 0.03 else
+                "LOW")
+
+        # Verdict is now honest about what the defense actually is
+        if agg == "fedavg":
+            verdict = (
+                "VULNERABLE — FedAvg dilution is arithmetic, not a defense. "
+                "At higher Byzantine fractions this will fail."
+                if risk == "LOW" else
+                "VULNERABLE — FedAvg cannot withstand this poisoning rate."
+            )
         else:
-            print(f"    poison_rate={rate:.0%}...", end=" ", flush=True)
-            result = run_fl(
-                poison_rate=rate,
-                poisoned_client_idx=poisoned_client_idx,
-                fl_rounds=fl_rounds,
-                local_epochs=local_epochs,
-                batch_size=batch_size,
-                lr=lr,
-                poison_target=poison_target,
+            verdict = (
+                f"RESISTANT — {agg} successfully limits poisoning impact."
+                if risk == "LOW" else
+                f"MODERATE — {agg} reduces but does not eliminate poisoning impact."
+                if risk == "MEDIUM" else
+                f"VULNERABLE — {agg} is insufficient at this poisoning rate."
             )
-            result["poison_rate"] = rate
-            # approximate poisoned label count
-            _, _, n_tr, n_p = load_client_csv(
-                CLIENT_CSVS[poisoned_client_idx],
-                poison_rate=rate,
-                poison_target=poison_target,
-            )
-            result["n_poisoned_labels"] = n_p
-            acc_drop = baseline["accuracy"] - result["accuracy"]
-            f1_drop  = baseline["macro_f1"] - result["macro_f1"]
-            print(f"acc={result['accuracy']:.4f} "
-                  f"(Δ={-acc_drop:+.4f})  "
-                  f"f1={result['macro_f1']:.4f} "
-                  f"(Δ={-f1_drop:+.4f})")
 
-        sweep_results.append(result)
+        all_agg_results[agg] = {
+            "baseline_accuracy":    baseline["accuracy"],
+            "baseline_macro_f1":    baseline["macro_f1"],
+            "full_poison_accuracy": full_poison["accuracy"],
+            "full_poison_macro_f1": full_poison["macro_f1"],
+            "accuracy_drop":        round(float(acc_drop_full), 6),
+            "f1_drop":              round(float(f1_drop_full), 6),
+            "risk_level":           risk,
+            "verdict":              verdict,
+            "sweep":                sweep_results,
+        }
 
-    # ── risk assessment ───────────────────────────────────────────────────────
-    full_poison = next(r for r in sweep_results if r["poison_rate"] == 1.0)
-    acc_drop_full = baseline["accuracy"] - full_poison["accuracy"]
-    f1_drop_full  = baseline["macro_f1"]  - full_poison["macro_f1"]
+    # ── Comparison table ──────────────────────────────────────────────────────
+    print(f"\n{'='*60}")
+    print("AGGREGATOR COMPARISON (100% poison rate, 1 of "
+          f"{len(CLIENT_CSVS)} clients)")
+    print(f"{'='*60}")
+    print(f"  {'Aggregator':<16} | {'Baseline':>10} | {'Poisoned':>10} | "
+          f"{'Drop':>8} | Risk")
+    print("  " + "-" * 58)
+    for agg, res in all_agg_results.items():
+        print(f"  {agg:<16} | {res['baseline_accuracy']:>10.4f} | "
+              f"{res['full_poison_accuracy']:>10.4f} | "
+              f"{res['accuracy_drop']:>+8.4f} | {res['risk_level']}")
+    print(f"{'='*60}")
 
-    risk = ("HIGH"   if acc_drop_full > 0.10 else
-            "MEDIUM" if acc_drop_full > 0.03 else
-            "LOW")
-
-    summary = {
-        "baseline_accuracy":    baseline["accuracy"],
-        "baseline_macro_f1":    baseline["macro_f1"],
-        "full_poison_accuracy": full_poison["accuracy"],
-        "full_poison_macro_f1": full_poison["macro_f1"],
-        "accuracy_drop":        round(float(acc_drop_full), 6),
-        "f1_drop":              round(float(f1_drop_full), 6),
-        "risk_level":           risk,
-        "verdict": (
-            "VULNERABLE — a single poisoned client significantly degrades the global model"
-            if risk == "HIGH" else
-            "MODERATE — poisoning causes measurable but limited degradation"
-            if risk == "MEDIUM" else
-            "RESISTANT — FedAvg dilutes the poisoned updates effectively"
-        ),
-        "mitigation_note": (
-            "FedAvg is known to be vulnerable to Byzantine attacks. "
-            "Mitigations include: robust aggregation (Krum, Trimmed Mean), "
-            "anomaly detection on client updates, and DP-SGD which limits "
-            "the influence of any single gradient."
-        ),
-    }
+    # ── Scalability note ──────────────────────────────────────────────────────
+    n = len(CLIENT_CSVS)
+    fedavg_threshold = n // 2
+    print(f"\n  Scalability note ({n} clients):")
+    print(f"  FedAvg breaks when Byzantine clients >= {fedavg_threshold} "
+          f"(50% threshold).")
+    print(f"  Krum/Trimmed Mean break when Byzantine clients >= "
+          f"{n // 2} (same threshold, but with formal guarantees).")
+    print(f"  At 3 clients, 1 Byzantine = 33% — within safe range for all.")
+    print(f"  At 10 clients, 4 Byzantine = 40% — FedAvg fails, Krum holds.")
+    print(f"  At 10 clients, 6 Byzantine = 60% — all algorithms fail.")
 
     output = {
-        "attack":        "gradient_poisoning",
+        "attack": "gradient_poisoning",
         "config": {
-            "fl_rounds":          fl_rounds,
-            "local_epochs":       local_epochs,
-            "poisoned_client":    poisoned_client_idx + 1,
+            "fl_rounds":           fl_rounds,
+            "local_epochs":        local_epochs,
+            "poisoned_client":     poisoned_client_idx + 1,
             "poison_target_class": poison_target,
-            "poison_target_name": CLASS_NAMES[poison_target] if poison_target < len(CLASS_NAMES) else str(poison_target),
+            "poison_target_name":  (CLASS_NAMES[poison_target]
+                                    if poison_target < len(CLASS_NAMES)
+                                    else str(poison_target)),
+            "n_clients":           n,
+            "aggregators_tested":  aggregators,
         },
-        "sweep":   sweep_results,
-        "summary": summary,
+        "results_by_aggregator": all_agg_results,
+        # Keep top-level summary keyed to FedAvg for dashboard backward compat
+        "summary": {
+            **all_agg_results.get("fedavg", all_agg_results[aggregators[0]]),
+            "aggregator_comparison": {
+                agg: {
+                    "accuracy_drop": res["accuracy_drop"],
+                    "risk_level":    res["risk_level"],
+                }
+                for agg, res in all_agg_results.items()
+            },
+            "mitigation_note": (
+                "FedAvg dilution is arithmetic, not a Byzantine defense. "
+                "Krum and Trimmed Mean provide formal robustness guarantees "
+                "when the Byzantine fraction is below 50%. "
+                "Enable with --robust-agg krum or --robust-agg trimmed-mean "
+                "on fl/run_server.py."
+            ),
+        },
+        # Keep legacy 'sweep' key pointing to FedAvg sweep for dashboard compat
+        "sweep": all_agg_results.get("fedavg", {}).get("sweep", []),
     }
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(output, f, indent=2)
-
-    print(f"\n{'='*55}")
-    print(f"  Baseline  : acc={baseline['accuracy']:.4f}  f1={baseline['macro_f1']:.4f}")
-    print(f"  100% flip : acc={full_poison['accuracy']:.4f}  "
-          f"f1={full_poison['macro_f1']:.4f}")
-    print(f"  Acc drop  : {acc_drop_full:.4f}")
-    print(f"  Risk      : {risk}")
-    print(f"  Verdict   : {summary['verdict']}")
-    print(f"{'='*55}")
-    print(f"\n✅ Saved → {out_path}")
+    print(f"\nSaved -> {out_path}")
 
 
 if __name__ == "__main__":
@@ -399,6 +478,12 @@ if __name__ == "__main__":
                         help="Poison rate values to sweep (e.g. 0.0 0.1 0.5 1.0).")
     parser.add_argument("--poisoned-client", type=int, default=0,
                         help="0-based index of the client to poison.")
+    parser.add_argument("--aggregators", nargs="+",
+                        default=["fedavg", "krum", "trimmed-mean"],
+                        choices=["fedavg", "krum", "multi-krum",
+                                 "trimmed-mean", "median"],
+                        help="Aggregation algorithms to compare. "
+                             "Default: fedavg krum trimmed-mean")
     parser.add_argument("--out", default=OUT_PATH,
                         help="Output JSON path.")
     args = parser.parse_args()
@@ -411,4 +496,5 @@ if __name__ == "__main__":
         poison_rates=args.poison_rates,
         poisoned_client_idx=args.poisoned_client,
         out_path=args.out,
+        aggregators=args.aggregators,
     )

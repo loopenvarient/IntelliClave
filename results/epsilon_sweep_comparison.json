@@ -1,0 +1,214 @@
+{
+  "no_dp_baseline_pct": 94.2,
+  "sweep": [
+    {
+      "epsilon": 1,
+      "old_accuracy_pct": 48.31,
+      "new_accuracy_pct": 76.49,
+      "delta_accuracy": 28.18,
+      "noise_multiplier": 1.3184,
+      "settings": {
+        "old": {
+          "batch": 32,
+          "dropout": 0.3,
+          "lr": 0.001
+        },
+        "new": {
+          "batch": 64,
+          "dropout": 0.0,
+          "lr": 0.002
+        }
+      }
+    },
+    {
+      "epsilon": 2,
+      "old_accuracy_pct": 62.32,
+      "new_accuracy_pct": 81.32,
+      "delta_accuracy": 19.0,
+      "noise_multiplier": 0.9241,
+      "settings": {
+        "old": {
+          "batch": 32,
+          "dropout": 0.3,
+          "lr": 0.001
+        },
+        "new": {
+          "batch": 64,
+          "dropout": 0.0,
+          "lr": 0.002
+        }
+      }
+    },
+    {
+      "epsilon": 3,
+      "old_accuracy_pct": 71.01,
+      "new_accuracy_pct": 82.61,
+      "delta_accuracy": 11.6,
+      "noise_multiplier": 0.7837,
+      "settings": {
+        "old": {
+          "batch": 32,
+          "dropout": 0.3,
+          "lr": 0.001
+        },
+        "new": {
+          "batch": 64,
+          "dropout": 0.0,
+          "lr": 0.002
+        }
+      }
+    },
+    {
+      "epsilon": 4,
+      "old_accuracy_pct": 69.08,
+      "new_accuracy_pct": 85.99,
+      "delta_accuracy": 16.91,
+      "noise_multiplier": 0.7031,
+      "settings": {
+        "old": {
+          "batch": 32,
+          "dropout": 0.3,
+          "lr": 0.001
+        },
+        "new": {
+          "batch": 64,
+          "dropout": 0.0,
+          "lr": 0.002
+        }
+      }
+    },
+    {
+      "epsilon": 5,
+      "old_accuracy_pct": 65.54,
+      "new_accuracy_pct": 86.15,
+      "delta_accuracy": 20.61,
+      "noise_multiplier": 0.6488,
+      "settings": {
+        "old": {
+          "batch": 32,
+          "dropout": 0.3,
+          "lr": 0.001
+        },
+        "new": {
+          "batch": 64,
+          "dropout": 0.0,
+          "lr": 0.002
+        }
+      }
+    },
+    {
+      "epsilon": 6,
+      "old_accuracy_pct": 70.69,
+      "new_accuracy_pct": 87.44,
+      "delta_accuracy": 16.75,
+      "noise_multiplier": 0.6082,
+      "settings": {
+        "old": {
+          "batch": 32,
+          "dropout": 0.3,
+          "lr": 0.001
+        },
+        "new": {
+          "batch": 64,
+          "dropout": 0.0,
+          "lr": 0.002
+        }
+      }
+    },
+    {
+      "epsilon": 7,
+      "old_accuracy_pct": 70.21,
+      "new_accuracy_pct": 85.99,
+      "delta_accuracy": 15.78,
+      "noise_multiplier": 0.5762,
+      "settings": {
+        "old": {
+          "batch": 32,
+          "dropout": 0.3,
+          "lr": 0.001
+        },
+        "new": {
+          "batch": 64,
+          "dropout": 0.0,
+          "lr": 0.002
+        }
+      }
+    },
+    {
+      "epsilon": 8,
+      "old_accuracy_pct": 73.27,
+      "new_accuracy_pct": 86.63,
+      "delta_accuracy": 13.36,
+      "noise_multiplier": 0.5502,
+      "settings": {
+        "old": {
+          "batch": 32,
+          "dropout": 0.3,
+          "lr": 0.001
+        },
+        "new": {
+          "batch": 64,
+          "dropout": 0.0,
+          "lr": 0.002
+        }
+      }
+    },
+    {
+      "epsilon": 9,
+      "old_accuracy_pct": 69.73,
+      "new_accuracy_pct": 87.44,
+      "delta_accuracy": 17.71,
+      "noise_multiplier": 0.5283,
+      "settings": {
+        "old": {
+          "batch": 32,
+          "dropout": 0.3,
+          "lr": 0.001
+        },
+        "new": {
+          "batch": 64,
+          "dropout": 0.0,
+          "lr": 0.002
+        }
+      }
+    },
+    {
+      "epsilon": 10,
+      "old_accuracy_pct": 79.23,
+      "new_accuracy_pct": 89.37,
+      "delta_accuracy": 10.14,
+      "noise_multiplier": 0.5095,
+      "settings": {
+        "old": {
+          "batch": 32,
+          "dropout": 0.3,
+          "lr": 0.001
+        },
+        "new": {
+          "batch": 64,
+          "dropout": 0.0,
+          "lr": 0.002
+        }
+      }
+    },
+    {
+      "epsilon": 15,
+      "old_accuracy_pct": 71.18,
+      "new_accuracy_pct": 88.24,
+      "delta_accuracy": 17.06,
+      "noise_multiplier": 0.4433,
+      "settings": {
+        "old": {
+          "batch": 32,
+          "dropout": 0.3,
+          "lr": 0.001
+        },
+        "new": {
+          "batch": 64,
+          "dropout": 0.0,
+          "lr": 0.002
+        }
+      }
+    }
+  ]
+}

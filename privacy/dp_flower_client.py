@@ -33,9 +33,7 @@ class DPFlowerClient(fl.client.NumPyClient):
             model=model,
             target_epsilon=target_epsilon,
             target_delta=delta,
-            max_grad_norm=1.0,
-            epochs=total_epochs,
-            num_classes=num_classes,
+            max_grad_norm=2.0,
         )
         self.trainer.attach(self.loader)
         print(f"[{client_id}] PrivacyEngine attached: "

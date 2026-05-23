@@ -30,6 +30,8 @@ RUN pip install --no-cache-dir \
 # ── Project source ────────────────────────────────────────────────────────────
 COPY fl/                         ./fl/
 COPY crypto/                     ./crypto/
+COPY config/                     ./config/
+COPY tee/                        ./tee/
 COPY data/class_weights.json     ./data/class_weights.json
 
 # Results directory for model checkpoints and privacy logs
@@ -42,6 +44,11 @@ ENV ADDRESS=0.0.0.0:8080
 ENV USE_CRYPTO=--crypto
 ENV STRATEGY=fedavg
 ENV FRACTION_FIT=1.0
+ENV ROUND_TIMEOUT=300
+ENV RESUME=
+ENV SAVE_DIR=/app/results/fl_rounds
+ENV DASHBOARD_STATE_DIR=/app/results
+ENV SEAL_REMOVE_PLAINTEXT=true
 
 EXPOSE 8080
 
@@ -51,4 +58,7 @@ CMD sh -c "python fl/run_server.py \
     --address ${ADDRESS} \
     --strategy ${STRATEGY} \
     --fraction-fit ${FRACTION_FIT} \
+    --save-dir ${SAVE_DIR} \
+    $( [ -n \"${ROUND_TIMEOUT}\" ] && [ \"${ROUND_TIMEOUT}\" != \"0\" ] && echo --round-timeout ${ROUND_TIMEOUT} ) \
+    $( [ -n \"${RESUME}\" ] && echo --resume ) \
     ${USE_CRYPTO}"

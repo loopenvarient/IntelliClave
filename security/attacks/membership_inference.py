@@ -77,7 +77,12 @@ def load_meta():
 def load_model(model_path: str = MODEL_PATH):
     meta = load_meta()
     model = get_model(meta["input_dim"], meta["num_classes"])
-    state = torch.load(model_path, map_location="cpu", weights_only=True)
+    sys.path.insert(0, os.path.join(_ROOT, "tee", "sealed_storage"))
+    try:
+        from sealed_storage import load_checkpoint_state_dict  # noqa: E402
+        state = load_checkpoint_state_dict(model_path, map_location="cpu")
+    except ImportError:
+        state = torch.load(model_path, map_location="cpu", weights_only=True)
     model.load_state_dict(state)
     model.eval()
     return model
@@ -205,15 +210,20 @@ def main(out_path: str = OUT_PATH, dp_mode: bool = False,
         "avg_conf_gap": round(float(avg_gap), 6),
         "high_risk_clients": high_risk,
         "verdict": (
-            "VULNERABLE — model significantly overfits, membership is detectable"
+            "VULNERABLE — threshold attack AUC > 0.7; membership may be detectable"
             if avg_auc > 0.7 else
-            "MODERATE — slight overfitting, limited membership signal"
+            "MODERATE — threshold attack shows limited membership signal (AUC > 0.6)"
             if avg_auc > 0.6 else
-            "RESISTANT — confidence gap is small, attack near random (AUC ≈ 0.5)"
+            "THRESHOLD-RESISTANT — confidence-threshold attack near random (AUC ≈ 0.5). "
+            "Not a formal MI guarantee; LiRA/shadow attacks were not evaluated."
+        ),
+        "formal_mi_note": (
+            "Formal membership-inference resistance follows from the DP guarantee "
+            "(ε, δ) when DP-SGD is enabled — not from a single threshold attack AUC."
         ),
         "dp_note": (
             "Re-run with DP-trained model (--dp flag) to compare. "
-            "DP-SGD should reduce the confidence gap and lower attack AUC."
+            "At ε=10, DP-SGD is the primary defence; threshold AUC is a coarse check only."
         ),
     }
 

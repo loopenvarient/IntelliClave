@@ -1,167 +1,197 @@
-[
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 1,
-    "client_id": "1",
-    "epsilon": 4.940999181097729,
-    "delta": 0.00040257648953301127,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 5.059,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 1,
-    "client_id": "2",
-    "epsilon": 4.982356513998886,
-    "delta": 0.000364963503649635,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 5.0176,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 1,
-    "client_id": "3",
-    "epsilon": 5.024028455465353,
-    "delta": 0.00033178500331785003,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 4.976,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 2,
-    "client_id": "2",
-    "epsilon": 6.5477245358899205,
-    "delta": 0.000364963503649635,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 3.4523,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 2,
-    "client_id": "3",
-    "epsilon": 6.577846251928432,
-    "delta": 0.00033178500331785003,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 3.4222,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 2,
-    "client_id": "1",
-    "epsilon": 6.5179511134602155,
-    "delta": 0.00040257648953301127,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 3.482,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 3,
-    "client_id": "3",
-    "epsilon": 7.845692628698041,
-    "delta": 0.00033178500331785003,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 2.1543,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 3,
-    "client_id": "1",
-    "epsilon": 7.806977116229516,
-    "delta": 0.00040257648953301127,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 2.193,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 3,
-    "client_id": "2",
-    "epsilon": 7.826116514707597,
-    "delta": 0.000364963503649635,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 2.1739,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 4,
-    "client_id": "2",
-    "epsilon": 8.956325481778077,
-    "delta": 0.000364963503649635,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 1.0437,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 4,
-    "client_id": "1",
-    "epsilon": 8.947284903707502,
-    "delta": 0.00040257648953301127,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 1.0527,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 4,
-    "client_id": "3",
-    "epsilon": 8.965875896121645,
-    "delta": 0.00033178500331785003,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 1.0341,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 5,
-    "client_id": "1",
-    "epsilon": 9.992497408128738,
-    "delta": 0.00040257648953301127,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 0.0075,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 5,
-    "client_id": "3",
-    "epsilon": 9.991681388209578,
-    "delta": 0.00033178500331785003,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 0.0083,
-    "budget_exhausted": false
-  },
-  {
-    "timestamp": "2026-04-26T21:38:29.931429",
-    "round": 5,
-    "client_id": "2",
-    "epsilon": 9.991792339535102,
-    "delta": 0.000364963503649635,
-    "loss": 0.0,
-    "accuracy": null,
-    "budget_remaining": 0.0082,
-    "budget_exhausted": false
+{
+  "log": [
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 1,
+      "client_id": "1",
+      "epsilon_cumulative": 4.940999,
+      "delta": 0.00040257648953301127,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 5.059,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 1,
+      "client_id": "2",
+      "epsilon_cumulative": 4.982357,
+      "delta": 0.000364963503649635,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 5.0176,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 1,
+      "client_id": "3",
+      "epsilon_cumulative": 5.024028,
+      "delta": 0.00033178500331785003,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 4.976,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 2,
+      "client_id": "3",
+      "epsilon_cumulative": 6.577846,
+      "delta": 0.00033178500331785003,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 3.4222,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 2,
+      "client_id": "2",
+      "epsilon_cumulative": 6.547725,
+      "delta": 0.000364963503649635,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 3.4523,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 2,
+      "client_id": "1",
+      "epsilon_cumulative": 6.517951,
+      "delta": 0.00040257648953301127,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 3.482,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 3,
+      "client_id": "1",
+      "epsilon_cumulative": 7.806977,
+      "delta": 0.00040257648953301127,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 2.193,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 3,
+      "client_id": "3",
+      "epsilon_cumulative": 7.845693,
+      "delta": 0.00033178500331785003,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 2.1543,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 3,
+      "client_id": "2",
+      "epsilon_cumulative": 7.826117,
+      "delta": 0.000364963503649635,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 2.1739,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 4,
+      "client_id": "3",
+      "epsilon_cumulative": 8.965876,
+      "delta": 0.00033178500331785003,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 1.0341,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 4,
+      "client_id": "2",
+      "epsilon_cumulative": 8.956325,
+      "delta": 0.000364963503649635,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 1.0437,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 4,
+      "client_id": "1",
+      "epsilon_cumulative": 8.947285,
+      "delta": 0.00040257648953301127,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 1.0527,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 5,
+      "client_id": "2",
+      "epsilon_cumulative": 9.991792,
+      "delta": 0.000364963503649635,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 0.0082,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 5,
+      "client_id": "1",
+      "epsilon_cumulative": 9.992497,
+      "delta": 0.00040257648953301127,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 0.0075,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    },
+    {
+      "timestamp": "2026-05-23T18:01:30.842064",
+      "round": 5,
+      "client_id": "3",
+      "epsilon_cumulative": 9.991681,
+      "delta": 0.00033178500331785003,
+      "loss": 0.0,
+      "accuracy": null,
+      "budget_remaining": 0.0083,
+      "budget_exhausted": false,
+      "accountant_note": "Opacus Renyi DP accountant -- epsilon is cumulative across all rounds, not per-round. Compare to max_epsilon."
+    }
+  ],
+  "cumulative_summary": {
+    "max_epsilon_budget": 10.0,
+    "worst_case_cumulative_epsilon": 9.992497,
+    "budget_fraction_consumed": 0.9992,
+    "budget_exhausted": false,
+    "per_client_cumulative": {
+      "1": 9.992497,
+      "2": 9.991792,
+      "3": 9.991681
+    },
+    "accountant": "Renyi DP (Opacus moments accountant)",
+    "composition": "Tight -- Opacus tracks cumulative privacy loss internally. The reported epsilon is the cumulative bound, not a per-round value multiplied by rounds."
   }
-]
+}

@@ -44,7 +44,7 @@ model, optimizer, loader = privacy_engine.make_private_with_epsilon(
     target_epsilon=2.0,
     target_delta=1e-5,
     epochs=5,
-    max_grad_norm=1.0,
+    max_grad_norm=2.0,
 )
 
 print("=== Opacus Smoke Test ===")

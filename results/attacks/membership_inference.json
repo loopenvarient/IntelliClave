@@ -58,7 +58,8 @@
     "avg_accuracy": 0.699971,
     "avg_conf_gap": 0.002503,
     "high_risk_clients": 0,
-    "verdict": "RESISTANT \u2014 confidence gap is small, attack near random (AUC \u2248 0.5)",
-    "dp_note": "Re-run with DP-trained model (--dp flag) to compare. DP-SGD should reduce the confidence gap and lower attack AUC."
+    "verdict": "THRESHOLD-RESISTANT \u2014 confidence-threshold attack near random (AUC \u2248 0.5). Not a formal MI guarantee; LiRA/shadow attacks were not evaluated.",
+    "formal_mi_note": "Formal membership-inference resistance follows from the DP guarantee (\u03b5, \u03b4) when DP-SGD is enabled \u2014 not from a single threshold attack AUC.",
+    "dp_note": "Re-run with DP-trained model (--dp flag) to compare. At \u03b5=10, DP-SGD is the primary defence; threshold AUC is a coarse check only."
   }
 }

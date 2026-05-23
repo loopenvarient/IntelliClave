@@ -8,7 +8,8 @@
 #   4. Apply all K8s resources (PVCs, services, network policy, deployments)
 #   5. Wait for fl-server pod to be ready (attestation init container runs)
 #   6. Wait for all 3 client pods to be ready (attestation verified)
-#   7. Print status summary
+#   7. Deploy Redis + dashboard API
+#   8. Print status summary
 #
 # Usage:
 #   bash kubernetes/cold_start.sh
@@ -34,7 +35,7 @@ echo "======================================================="
 echo ""
 
 # ── Step 1: Start minikube ────────────────────────────────────────────────────
-echo "[1/7] Starting minikube..."
+echo "[1/8] Starting minikube..."
 if minikube status --profile=minikube 2>/dev/null | grep -q "Running"; then
     echo "  minikube already running — skipping"
 else
@@ -48,13 +49,13 @@ fi
 
 # ── Step 2: Create namespace ──────────────────────────────────────────────────
 echo ""
-echo "[2/7] Creating namespace..."
+echo "[2/8] Creating namespace..."
 kubectl apply -f "$SCRIPT_DIR/namespace.yaml"
 echo "  ✓ namespace/$NAMESPACE ready"
 
 # ── Step 3: Generate crypto keypair + create Secret ──────────────────────────
 echo ""
-echo "[3/7] Generating RSA-2048 keypair and creating fl-crypto-keys Secret..."
+echo "[3/8] Generating RSA-2048 keypair and creating fl-crypto-keys Secret..."
 
 KEY_DIR="$ROOT_DIR/crypto/certs/keys"
 mkdir -p "$KEY_DIR"
@@ -80,7 +81,7 @@ echo "  ✓ Secret/fl-crypto-keys created"
 
 # ── Step 4: Apply all K8s resources ──────────────────────────────────────────
 echo ""
-echo "[4/7] Applying K8s resources..."
+echo "[4/8] Applying K8s resources..."
 
 # Volumes first
 kubectl apply -f "$SCRIPT_DIR/volumes/server-pvc.yaml"
@@ -106,11 +107,14 @@ else
     kubectl apply -f "$SCRIPT_DIR/deployments/fl-client-3.yaml"
 fi
 
+kubectl apply -f "$SCRIPT_DIR/deployments/redis.yaml"
+kubectl apply -f "$SCRIPT_DIR/deployments/dashboard.yaml"
+
 echo "  ✓ All resources applied"
 
 # ── Step 5: Wait for fl-server ────────────────────────────────────────────────
 echo ""
-echo "[5/7] Waiting for fl-server pod (attestation init container runs first)..."
+echo "[5/8] Waiting for fl-server pod (attestation init container runs first)..."
 kubectl rollout status deployment/fl-server \
     --namespace="$NAMESPACE" \
     --timeout=120s
@@ -118,7 +122,7 @@ echo "  ✓ fl-server ready"
 
 # ── Step 6: Wait for all 3 clients ───────────────────────────────────────────
 echo ""
-echo "[6/7] Waiting for FL clients (attestation verified before connecting)..."
+echo "[6/8] Waiting for FL clients (attestation verified before connecting)..."
 
 for CLIENT in fl-client-1 fl-client-2 fl-client-3; do
     echo "  Waiting for $CLIENT..."
@@ -128,9 +132,20 @@ for CLIENT in fl-client-1 fl-client-2 fl-client-3; do
     echo "  ✓ $CLIENT ready"
 done
 
-# ── Step 7: Status summary ────────────────────────────────────────────────────
+# ── Step 7: Wait for dashboard + Redis ────────────────────────────────────────
 echo ""
-echo "[7/7] Cluster status:"
+echo "[7/8] Waiting for Redis and dashboard-backend..."
+kubectl rollout status deployment/redis \
+    --namespace="$NAMESPACE" \
+    --timeout=120s
+kubectl rollout status deployment/dashboard-backend \
+    --namespace="$NAMESPACE" \
+    --timeout=180s
+echo "  ✓ Redis and dashboard-backend ready"
+
+# ── Step 8: Status summary ────────────────────────────────────────────────────
+echo ""
+echo "[8/8] Cluster status:"
 kubectl get pods --namespace="$NAMESPACE" -o wide
 echo ""
 kubectl get services --namespace="$NAMESPACE"
@@ -147,6 +162,9 @@ echo ""
 echo "  Monitor training:"
 echo "    kubectl logs -f deployment/fl-server -n $NAMESPACE"
 echo ""
-echo "  Check attestation record:"
-echo "    cat attestation.json"
+echo "  Dashboard API : kubectl port-forward svc/dashboard-service 8001:8001 -n $NAMESPACE"
+echo "  Check attestation:"
+echo "    cat results/attestation.json"
+echo "  Build images first (from repo root):"
+echo "    bash scripts/build_docker_images.sh"
 echo "======================================================="

@@ -1,0 +1,66 @@
+{
+  "epsilon": 10.0,
+  "clipping_norms": [
+    0.5,
+    1.0,
+    2.0
+  ],
+  "epochs": 3,
+  "results": [
+    {
+      "max_grad_norm": 0.5,
+      "target_epsilon": 10.0,
+      "actual_epsilon": 9.9945,
+      "noise_multiplier": 0.472259521484375,
+      "noise_std": 0.23613,
+      "test_accuracy": 0.7842,
+      "delta": 0.00040258,
+      "n_train": 2484,
+      "interpretation": "LIGHT NOISE \u2014 privacy guarantee may be weak"
+    },
+    {
+      "max_grad_norm": 1.0,
+      "target_epsilon": 10.0,
+      "actual_epsilon": 9.9945,
+      "noise_multiplier": 0.472259521484375,
+      "noise_std": 0.47226,
+      "test_accuracy": 0.7665,
+      "delta": 0.00040258,
+      "n_train": 2484,
+      "interpretation": "LIGHT NOISE \u2014 privacy guarantee may be weak"
+    },
+    {
+      "max_grad_norm": 2.0,
+      "target_epsilon": 10.0,
+      "actual_epsilon": 9.9945,
+      "noise_multiplier": 0.472259521484375,
+      "noise_std": 0.944519,
+      "test_accuracy": 0.7601,
+      "delta": 0.00040258,
+      "n_train": 2484,
+      "interpretation": "LIGHT NOISE \u2014 privacy guarantee may be weak"
+    }
+  ],
+  "best": {
+    "max_grad_norm": 0.5,
+    "target_epsilon": 10.0,
+    "actual_epsilon": 9.9945,
+    "noise_multiplier": 0.472259521484375,
+    "noise_std": 0.23613,
+    "test_accuracy": 0.7842,
+    "delta": 0.00040258,
+    "n_train": 2484,
+    "interpretation": "LIGHT NOISE \u2014 privacy guarantee may be weak"
+  },
+  "default_norm_result": {
+    "max_grad_norm": 2.0,
+    "target_epsilon": 10.0,
+    "actual_epsilon": 9.9945,
+    "noise_multiplier": 0.472259521484375,
+    "noise_std": 0.944519,
+    "test_accuracy": 0.7601,
+    "delta": 0.00040258,
+    "n_train": 2484,
+    "interpretation": "LIGHT NOISE \u2014 privacy guarantee may be weak"
+  }
+}

@@ -186,6 +186,7 @@ def get_model(
     input_dim: int,
     num_classes: int,
     model_type: ModelType = "mlp",
+    dropout: float = 0.3,
 ) -> nn.Module:
     """
     Build and return a model for FL classification.
@@ -195,10 +196,16 @@ def get_model(
     input_dim  : number of input features (inferred from CSV at runtime)
     num_classes: number of output classes  (inferred from CSV at runtime)
     model_type : "mlp" | "resnet-tabular" | "transformer-tabular"
+    dropout    : dropout rate (default 0.3). Pass 0.0 when using DP training
+                 to avoid compounding DP noise with dropout variance — the
+                 privacy guarantee already acts as regularisation.
     """
     if model_type == "resnet-tabular":
-        return ResNetTabular(input_dim=input_dim, num_classes=num_classes)
+        return ResNetTabular(input_dim=input_dim, num_classes=num_classes,
+                             dropout=dropout)
     if model_type == "transformer-tabular":
-        return TransformerTabular(input_dim=input_dim, num_classes=num_classes)
+        return TransformerTabular(input_dim=input_dim, num_classes=num_classes,
+                                  dropout=dropout)
     # default: mlp
-    return FLClassifier(input_dim=input_dim, num_classes=num_classes)
+    return FLClassifier(input_dim=input_dim, num_classes=num_classes,
+                        dropout=dropout)

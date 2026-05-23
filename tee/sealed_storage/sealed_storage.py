@@ -191,14 +191,49 @@ def unseal_file(src_path: str, dst_path: str = None, mrenclave: str = None) -> s
     return dst_path
 
 
-def seal_model_checkpoint(pth_path: str, mrenclave: str = None) -> str:
+def seal_model_checkpoint(
+    pth_path: str,
+    mrenclave: str = None,
+    remove_plaintext: bool = False,
+) -> str:
     """
-    Seal a PyTorch model checkpoint (.pth) to the server enclave.
-    The sealed file is written alongside the original as <name>.pth.sealed.
+    Seal a PyTorch model checkpoint (.pth) to the server enclave (AES-256-GCM).
+
+    Writes <name>.pth.sealed. When remove_plaintext=True, deletes the .pth so
+    only the MRENCLAVE-bound sealed blob remains on disk (same policy as seal_pca).
     """
     sealed_path = seal_file(pth_path, pth_path + ".sealed", mrenclave)
     print(f"[SealedStorage] Sealed model checkpoint: {os.path.basename(pth_path)}")
+    if remove_plaintext and os.path.exists(pth_path):
+        os.remove(pth_path)
+        print(f"[SealedStorage] Plaintext checkpoint removed: {os.path.basename(pth_path)}")
     return sealed_path
+
+
+def resolve_checkpoint_path(pth_path: str) -> str:
+    """Return plaintext path if present, else .pth.sealed path."""
+    if os.path.isfile(pth_path):
+        return pth_path
+    sealed = pth_path + ".sealed"
+    if os.path.isfile(sealed):
+        return sealed
+    return pth_path
+
+
+def load_checkpoint_state_dict(pth_path: str, mrenclave: str = None, map_location="cpu"):
+    """
+    Load a PyTorch state_dict from plaintext .pth or .pth.sealed (unseal in RAM).
+    """
+    import io
+    import torch
+
+    path = resolve_checkpoint_path(pth_path)
+    if path.endswith(".sealed"):
+        with open(path, "rb") as f:
+            sealed_blob = f.read()
+        plaintext = unseal(sealed_blob, mrenclave)
+        return torch.load(io.BytesIO(plaintext), map_location=map_location, weights_only=True)
+    return torch.load(path, map_location=map_location, weights_only=True)
 
 
 def seal_private_key(pem_path: str, mrenclave: str = None) -> str:

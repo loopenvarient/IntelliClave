@@ -1,93 +1,433 @@
 {
   "attack": "gradient_poisoning",
   "config": {
-    "fl_rounds": 5,
+    "fl_rounds": 3,
     "local_epochs": 3,
     "poisoned_client": 1,
     "poison_target_class": 1,
-    "poison_target_name": "WALKING_UPSTAIRS"
+    "poison_target_name": "WALKING_UPSTAIRS",
+    "n_clients": 3,
+    "aggregators_tested": [
+      "fedavg",
+      "krum",
+      "trimmed-mean"
+    ]
+  },
+  "results_by_aggregator": {
+    "fedavg": {
+      "baseline_accuracy": 0.953906,
+      "baseline_macro_f1": 0.954424,
+      "full_poison_accuracy": 0.90296,
+      "full_poison_macro_f1": 0.902665,
+      "accuracy_drop": 0.050946,
+      "f1_drop": 0.051759,
+      "risk_level": "MEDIUM",
+      "verdict": "VULNERABLE \u2014 FedAvg cannot withstand this poisoning rate.",
+      "sweep": [
+        {
+          "accuracy": 0.953906,
+          "macro_f1": 0.954424,
+          "per_class_f1": {
+            "WALKING": 0.985507,
+            "WALKING_UPSTAIRS": 0.964286,
+            "WALKING_DOWNSTAIRS": 0.966372,
+            "SITTING": 0.898844,
+            "STANDING": 0.912821,
+            "LAYING": 0.998716
+          },
+          "poison_rate": 0.0,
+          "n_poisoned_labels": 0
+        },
+        {
+          "accuracy": 0.950024,
+          "macro_f1": 0.950972,
+          "per_class_f1": {
+            "WALKING": 0.982507,
+            "WALKING_UPSTAIRS": 0.969106,
+            "WALKING_DOWNSTAIRS": 0.968421,
+            "SITTING": 0.885673,
+            "STANDING": 0.901408,
+            "LAYING": 0.998716
+          },
+          "poison_rate": 0.1,
+          "n_poisoned_labels": 248
+        },
+        {
+          "accuracy": 0.95148,
+          "macro_f1": 0.952465,
+          "per_class_f1": {
+            "WALKING": 0.982507,
+            "WALKING_UPSTAIRS": 0.966292,
+            "WALKING_DOWNSTAIRS": 0.97153,
+            "SITTING": 0.892351,
+            "STANDING": 0.903394,
+            "LAYING": 0.998716
+          },
+          "poison_rate": 0.3,
+          "n_poisoned_labels": 745
+        },
+        {
+          "accuracy": 0.95148,
+          "macro_f1": 0.952468,
+          "per_class_f1": {
+            "WALKING": 0.982507,
+            "WALKING_UPSTAIRS": 0.964856,
+            "WALKING_DOWNSTAIRS": 0.973166,
+            "SITTING": 0.890805,
+            "STANDING": 0.903475,
+            "LAYING": 1.0
+          },
+          "poison_rate": 0.5,
+          "n_poisoned_labels": 1242
+        },
+        {
+          "accuracy": 0.90296,
+          "macro_f1": 0.902665,
+          "per_class_f1": {
+            "WALKING": 0.923795,
+            "WALKING_UPSTAIRS": 0.851182,
+            "WALKING_DOWNSTAIRS": 0.912214,
+            "SITTING": 0.867114,
+            "STANDING": 0.865546,
+            "LAYING": 0.996139
+          },
+          "poison_rate": 1.0,
+          "n_poisoned_labels": 2484
+        }
+      ]
+    },
+    "krum": {
+      "baseline_accuracy": 0.921397,
+      "baseline_macro_f1": 0.920104,
+      "full_poison_accuracy": 0.933527,
+      "full_poison_macro_f1": 0.934719,
+      "accuracy_drop": -0.01213,
+      "f1_drop": -0.014615,
+      "risk_level": "LOW",
+      "verdict": "RESISTANT \u2014 krum successfully limits poisoning impact.",
+      "sweep": [
+        {
+          "accuracy": 0.921397,
+          "macro_f1": 0.920104,
+          "per_class_f1": {
+            "WALKING": 0.960118,
+            "WALKING_UPSTAIRS": 0.921175,
+            "WALKING_DOWNSTAIRS": 0.915751,
+            "SITTING": 0.845201,
+            "STANDING": 0.883495,
+            "LAYING": 0.994885
+          },
+          "poison_rate": 0.0,
+          "n_poisoned_labels": 0
+        },
+        {
+          "accuracy": 0.937894,
+          "macro_f1": 0.939012,
+          "per_class_f1": {
+            "WALKING": 0.978166,
+            "WALKING_UPSTAIRS": 0.958541,
+            "WALKING_DOWNSTAIRS": 0.955172,
+            "SITTING": 0.870396,
+            "STANDING": 0.871795,
+            "LAYING": 1.0
+          },
+          "poison_rate": 0.1,
+          "n_poisoned_labels": 248
+        },
+        {
+          "accuracy": 0.932557,
+          "macro_f1": 0.932961,
+          "per_class_f1": {
+            "WALKING": 0.961593,
+            "WALKING_UPSTAIRS": 0.950331,
+            "WALKING_DOWNSTAIRS": 0.939716,
+            "SITTING": 0.872222,
+            "STANDING": 0.880319,
+            "LAYING": 0.993582
+          },
+          "poison_rate": 0.3,
+          "n_poisoned_labels": 745
+        },
+        {
+          "accuracy": 0.938865,
+          "macro_f1": 0.939258,
+          "per_class_f1": {
+            "WALKING": 0.974138,
+            "WALKING_UPSTAIRS": 0.951261,
+            "WALKING_DOWNSTAIRS": 0.944828,
+            "SITTING": 0.882514,
+            "STANDING": 0.884097,
+            "LAYING": 0.998713
+          },
+          "poison_rate": 0.5,
+          "n_poisoned_labels": 1242
+        },
+        {
+          "accuracy": 0.933527,
+          "macro_f1": 0.934719,
+          "per_class_f1": {
+            "WALKING": 0.969957,
+            "WALKING_UPSTAIRS": 0.955519,
+            "WALKING_DOWNSTAIRS": 0.952381,
+            "SITTING": 0.870396,
+            "STANDING": 0.865229,
+            "LAYING": 0.994832
+          },
+          "poison_rate": 1.0,
+          "n_poisoned_labels": 2484
+        }
+      ]
+    },
+    "trimmed-mean": {
+      "baseline_accuracy": 0.947598,
+      "baseline_macro_f1": 0.948617,
+      "full_poison_accuracy": 0.863173,
+      "full_poison_macro_f1": 0.863652,
+      "accuracy_drop": 0.084425,
+      "f1_drop": 0.084965,
+      "risk_level": "MEDIUM",
+      "verdict": "MODERATE \u2014 trimmed-mean reduces but does not eliminate poisoning impact.",
+      "sweep": [
+        {
+          "accuracy": 0.947598,
+          "macro_f1": 0.948617,
+          "per_class_f1": {
+            "WALKING": 0.982609,
+            "WALKING_UPSTAIRS": 0.966074,
+            "WALKING_DOWNSTAIRS": 0.967972,
+            "SITTING": 0.880576,
+            "STANDING": 0.895753,
+            "LAYING": 0.998716
+          },
+          "poison_rate": 0.0,
+          "n_poisoned_labels": 0
+        },
+        {
+          "accuracy": 0.947113,
+          "macro_f1": 0.948038,
+          "per_class_f1": {
+            "WALKING": 0.981077,
+            "WALKING_UPSTAIRS": 0.962963,
+            "WALKING_DOWNSTAIRS": 0.966252,
+            "SITTING": 0.882184,
+            "STANDING": 0.895753,
+            "LAYING": 1.0
+          },
+          "poison_rate": 0.1,
+          "n_poisoned_labels": 248
+        },
+        {
+          "accuracy": 0.951965,
+          "macro_f1": 0.952595,
+          "per_class_f1": {
+            "WALKING": 0.983988,
+            "WALKING_UPSTAIRS": 0.963082,
+            "WALKING_DOWNSTAIRS": 0.966132,
+            "SITTING": 0.895265,
+            "STANDING": 0.908387,
+            "LAYING": 0.998716
+          },
+          "poison_rate": 0.3,
+          "n_poisoned_labels": 745
+        },
+        {
+          "accuracy": 0.945172,
+          "macro_f1": 0.946119,
+          "per_class_f1": {
+            "WALKING": 0.983988,
+            "WALKING_UPSTAIRS": 0.95873,
+            "WALKING_DOWNSTAIRS": 0.963899,
+            "SITTING": 0.88045,
+            "STANDING": 0.890933,
+            "LAYING": 0.998716
+          },
+          "poison_rate": 0.5,
+          "n_poisoned_labels": 1242
+        },
+        {
+          "accuracy": 0.863173,
+          "macro_f1": 0.863652,
+          "per_class_f1": {
+            "WALKING": 0.82968,
+            "WALKING_UPSTAIRS": 0.760843,
+            "WALKING_DOWNSTAIRS": 0.884086,
+            "SITTING": 0.853556,
+            "STANDING": 0.861496,
+            "LAYING": 0.992248
+          },
+          "poison_rate": 1.0,
+          "n_poisoned_labels": 2484
+        }
+      ]
+    }
+  },
+  "summary": {
+    "baseline_accuracy": 0.953906,
+    "baseline_macro_f1": 0.954424,
+    "full_poison_accuracy": 0.90296,
+    "full_poison_macro_f1": 0.902665,
+    "accuracy_drop": 0.050946,
+    "f1_drop": 0.051759,
+    "risk_level": "MEDIUM",
+    "verdict": "VULNERABLE \u2014 FedAvg cannot withstand this poisoning rate.",
+    "sweep": [
+      {
+        "accuracy": 0.953906,
+        "macro_f1": 0.954424,
+        "per_class_f1": {
+          "WALKING": 0.985507,
+          "WALKING_UPSTAIRS": 0.964286,
+          "WALKING_DOWNSTAIRS": 0.966372,
+          "SITTING": 0.898844,
+          "STANDING": 0.912821,
+          "LAYING": 0.998716
+        },
+        "poison_rate": 0.0,
+        "n_poisoned_labels": 0
+      },
+      {
+        "accuracy": 0.950024,
+        "macro_f1": 0.950972,
+        "per_class_f1": {
+          "WALKING": 0.982507,
+          "WALKING_UPSTAIRS": 0.969106,
+          "WALKING_DOWNSTAIRS": 0.968421,
+          "SITTING": 0.885673,
+          "STANDING": 0.901408,
+          "LAYING": 0.998716
+        },
+        "poison_rate": 0.1,
+        "n_poisoned_labels": 248
+      },
+      {
+        "accuracy": 0.95148,
+        "macro_f1": 0.952465,
+        "per_class_f1": {
+          "WALKING": 0.982507,
+          "WALKING_UPSTAIRS": 0.966292,
+          "WALKING_DOWNSTAIRS": 0.97153,
+          "SITTING": 0.892351,
+          "STANDING": 0.903394,
+          "LAYING": 0.998716
+        },
+        "poison_rate": 0.3,
+        "n_poisoned_labels": 745
+      },
+      {
+        "accuracy": 0.95148,
+        "macro_f1": 0.952468,
+        "per_class_f1": {
+          "WALKING": 0.982507,
+          "WALKING_UPSTAIRS": 0.964856,
+          "WALKING_DOWNSTAIRS": 0.973166,
+          "SITTING": 0.890805,
+          "STANDING": 0.903475,
+          "LAYING": 1.0
+        },
+        "poison_rate": 0.5,
+        "n_poisoned_labels": 1242
+      },
+      {
+        "accuracy": 0.90296,
+        "macro_f1": 0.902665,
+        "per_class_f1": {
+          "WALKING": 0.923795,
+          "WALKING_UPSTAIRS": 0.851182,
+          "WALKING_DOWNSTAIRS": 0.912214,
+          "SITTING": 0.867114,
+          "STANDING": 0.865546,
+          "LAYING": 0.996139
+        },
+        "poison_rate": 1.0,
+        "n_poisoned_labels": 2484
+      }
+    ],
+    "aggregator_comparison": {
+      "fedavg": {
+        "accuracy_drop": 0.050946,
+        "risk_level": "MEDIUM"
+      },
+      "krum": {
+        "accuracy_drop": -0.01213,
+        "risk_level": "LOW"
+      },
+      "trimmed-mean": {
+        "accuracy_drop": 0.084425,
+        "risk_level": "MEDIUM"
+      }
+    },
+    "mitigation_note": "FedAvg dilution is arithmetic, not a Byzantine defense. Krum and Trimmed Mean provide formal robustness guarantees when the Byzantine fraction is below 50%. Enable with --robust-agg krum or --robust-agg trimmed-mean on fl/run_server.py."
   },
   "sweep": [
     {
-      "accuracy": 0.957787,
-      "macro_f1": 0.958717,
+      "accuracy": 0.953906,
+      "macro_f1": 0.954424,
       "per_class_f1": {
-        "WALKING": 0.986938,
-        "WALKING_UPSTAIRS": 0.97377,
-        "WALKING_DOWNSTAIRS": 0.975524,
-        "SITTING": 0.902299,
-        "STANDING": 0.913771,
-        "LAYING": 1.0
+        "WALKING": 0.985507,
+        "WALKING_UPSTAIRS": 0.964286,
+        "WALKING_DOWNSTAIRS": 0.966372,
+        "SITTING": 0.898844,
+        "STANDING": 0.912821,
+        "LAYING": 0.998716
       },
       "poison_rate": 0.0,
       "n_poisoned_labels": 0
     },
     {
-      "accuracy": 0.957302,
-      "macro_f1": 0.958202,
+      "accuracy": 0.950024,
+      "macro_f1": 0.950972,
       "per_class_f1": {
-        "WALKING": 0.985549,
-        "WALKING_UPSTAIRS": 0.972358,
-        "WALKING_DOWNSTAIRS": 0.975177,
-        "SITTING": 0.902579,
-        "STANDING": 0.913548,
-        "LAYING": 1.0
+        "WALKING": 0.982507,
+        "WALKING_UPSTAIRS": 0.969106,
+        "WALKING_DOWNSTAIRS": 0.968421,
+        "SITTING": 0.885673,
+        "STANDING": 0.901408,
+        "LAYING": 0.998716
       },
       "poison_rate": 0.1,
       "n_poisoned_labels": 248
     },
     {
-      "accuracy": 0.957302,
-      "macro_f1": 0.958556,
+      "accuracy": 0.95148,
+      "macro_f1": 0.952465,
       "per_class_f1": {
-        "WALKING": 0.988338,
-        "WALKING_UPSTAIRS": 0.974026,
-        "WALKING_DOWNSTAIRS": 0.980668,
-        "SITTING": 0.900976,
-        "STANDING": 0.908609,
+        "WALKING": 0.982507,
+        "WALKING_UPSTAIRS": 0.966292,
+        "WALKING_DOWNSTAIRS": 0.97153,
+        "SITTING": 0.892351,
+        "STANDING": 0.903394,
         "LAYING": 0.998716
       },
       "poison_rate": 0.3,
       "n_poisoned_labels": 745
     },
     {
-      "accuracy": 0.957787,
-      "macro_f1": 0.958255,
+      "accuracy": 0.95148,
+      "macro_f1": 0.952468,
       "per_class_f1": {
-        "WALKING": 0.9869,
-        "WALKING_UPSTAIRS": 0.9664,
-        "WALKING_DOWNSTAIRS": 0.967857,
-        "SITTING": 0.909871,
-        "STANDING": 0.918499,
+        "WALKING": 0.982507,
+        "WALKING_UPSTAIRS": 0.964856,
+        "WALKING_DOWNSTAIRS": 0.973166,
+        "SITTING": 0.890805,
+        "STANDING": 0.903475,
         "LAYING": 1.0
       },
       "poison_rate": 0.5,
       "n_poisoned_labels": 1242
     },
     {
-      "accuracy": 0.919942,
-      "macro_f1": 0.919235,
+      "accuracy": 0.90296,
+      "macro_f1": 0.902665,
       "per_class_f1": {
-        "WALKING": 0.933948,
-        "WALKING_UPSTAIRS": 0.876437,
-        "WALKING_DOWNSTAIRS": 0.925373,
-        "SITTING": 0.887344,
-        "STANDING": 0.894879,
-        "LAYING": 0.997429
+        "WALKING": 0.923795,
+        "WALKING_UPSTAIRS": 0.851182,
+        "WALKING_DOWNSTAIRS": 0.912214,
+        "SITTING": 0.867114,
+        "STANDING": 0.865546,
+        "LAYING": 0.996139
       },
       "poison_rate": 1.0,
       "n_poisoned_labels": 2484
     }
-  ],
-  "summary": {
-    "baseline_accuracy": 0.957787,
-    "baseline_macro_f1": 0.958717,
-    "full_poison_accuracy": 0.919942,
-    "full_poison_macro_f1": 0.919235,
-    "accuracy_drop": 0.037845,
-    "f1_drop": 0.039482,
-    "risk_level": "MEDIUM",
-    "verdict": "MODERATE \u2014 poisoning causes measurable but limited degradation",
-    "mitigation_note": "FedAvg is known to be vulnerable to Byzantine attacks. Mitigations include: robust aggregation (Krum, Trimmed Mean), anomaly detection on client updates, and DP-SGD which limits the influence of any single gradient."
-  }
+  ]
 }

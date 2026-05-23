@@ -44,32 +44,48 @@ def main(max_epsilon: float = DEFAULT_EPSILON,
 
     for round_entry in privacy_data:
         for client in round_entry["clients"]:
+            # fl_privacy.json uses "epsilon" key; BudgetMonitor.record() accepts
+            # it and stores it as "epsilon_cumulative" (the Opacus value IS cumulative)
             monitor.record(
                 round_num=round_entry["round"],
                 client_id=client["client_id"],
                 epsilon=client["epsilon"],
-                delta=client["delta"],
+                delta=client.get("delta") or 0.0,
                 loss=0.0,
             )
 
     os.makedirs(os.path.dirname(out), exist_ok=True)
     monitor.save(out)
-    print(f"Budget monitor saved to {out}")
 
+    # Load the saved log (new format: {"log": [...], "cumulative_summary": {...}})
     with open(out) as f:
-        log = json.load(f)
+        saved = json.load(f)
+
+    log = saved.get("log", saved) if isinstance(saved, dict) else saved
+    summary = saved.get("cumulative_summary", {}) if isinstance(saved, dict) else {}
 
     print()
-    print(f"{'Round':<8} {'Client':<12} {'Epsilon':>10} {'Remaining':>12} {'Exhausted':>10}")
-    print("-" * 56)
+    print(f"{'Round':<8} {'Client':<12} {'Epsilon (cumul)':>16} {'Remaining':>12} {'Exhausted':>10}")
+    print("-" * 62)
     for entry in log:
+        # Support both old key ("epsilon") and new key ("epsilon_cumulative")
+        eps = entry.get("epsilon_cumulative") or entry.get("epsilon") or 0.0
         print(
             f"{entry['round']:<8} "
             f"{entry['client_id']:<12} "
-            f"{entry['epsilon']:>10.4f} "
+            f"{eps:>16.4f} "
             f"{entry['budget_remaining']:>12.4f} "
             f"{str(entry['budget_exhausted']):>10}"
         )
+
+    if summary:
+        print()
+        wc = summary.get("worst_case_cumulative_epsilon", "n/a")
+        budget = summary.get("max_epsilon_budget", max_epsilon)
+        exhausted = summary.get("budget_exhausted", False)
+        print(f"Worst-case cumulative epsilon: {wc} / {budget} "
+              f"({'EXHAUSTED' if exhausted else 'within budget'})")
+        print(f"Accountant: {summary.get('accountant', 'unknown')}")
 
 
 if __name__ == "__main__":

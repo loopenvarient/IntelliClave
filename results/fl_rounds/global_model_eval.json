@@ -1,31 +1,31 @@
 {
-  "checkpoint": "results/fl_rounds/global_model_latest.pth",
+  "checkpoint": "C:\\Users\\user\\Documents\\GitHub\\IntelliClave\\results\\fl_rounds\\global_model_latest.pth",
   "per_client": [
     {
-      "client_csv": "data/processed/client1.csv",
+      "client_csv": "C:\\Users\\user\\Documents\\GitHub\\IntelliClave\\data\\processed\\client1.csv",
       "test_size": 621,
-      "loss": 0.27177,
-      "accuracy": 0.90177,
-      "macro_f1": 0.89867
+      "loss": 0.32722,
+      "accuracy": 0.88567,
+      "macro_f1": 0.88061
     },
     {
-      "client_csv": "data/processed/client2.csv",
+      "client_csv": "C:\\Users\\user\\Documents\\GitHub\\IntelliClave\\data\\processed\\client2.csv",
       "test_size": 686,
-      "loss": 0.29575,
-      "accuracy": 0.89504,
-      "macro_f1": 0.89287
+      "loss": 0.29083,
+      "accuracy": 0.88776,
+      "macro_f1": 0.88612
     },
     {
-      "client_csv": "data/processed/client3.csv",
+      "client_csv": "C:\\Users\\user\\Documents\\GitHub\\IntelliClave\\data\\processed\\client3.csv",
       "test_size": 754,
-      "loss": 0.19881,
-      "accuracy": 0.93767,
-      "macro_f1": 0.93967
+      "loss": 0.22041,
+      "accuracy": 0.92573,
+      "macro_f1": 0.92913
     }
   ],
   "overall_weighted": {
-    "loss": 0.25306,
-    "accuracy": 0.91266,
-    "macro_f1": 0.91174
+    "loss": 0.27603,
+    "accuracy": 0.90102,
+    "macro_f1": 0.90019
   }
 }
