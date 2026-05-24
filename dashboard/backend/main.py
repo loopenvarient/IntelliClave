@@ -10,18 +10,22 @@ Fixes applied:
     the most recently modified global_model_latest.pth.
   - CORS allowed origins are configurable via the CORS_ORIGINS env variable
     (comma-separated). Defaults to http://localhost:3000 for development.
+  - API authentication via Bearer token. Set API_KEY env variable (default: random).
+    Protected endpoints: /predict, /privacy_log
 """
 import json
 import os
 import sys
 import time
+import secrets
 from collections import defaultdict
 from typing import List
 
 import torch
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthCredentials
 from pydantic import BaseModel
 
 # ── model imports ─────────────────────────────────────────────────────────────
@@ -33,6 +37,28 @@ from model import get_model  # noqa: E402
 # ─────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="IntelliClave Dashboard API", version="1.0.0")
+
+# ── API Authentication ─────────────────────────────────────────────────────────
+# Use environment variable API_KEY or generate a random one (logged at startup)
+_api_key = os.environ.get("API_KEY")
+if not _api_key:
+    _api_key = secrets.token_urlsafe(32)
+    print(f"[Dashboard] Generated random API key: {_api_key}")
+    print(f"[Dashboard] Set API_KEY environment variable to use a custom key")
+else:
+    print(f"[Dashboard] Using API key from environment")
+
+security = HTTPBearer()
+
+def _verify_api_key(credentials: HTTPAuthCredentials = Depends(security)) -> None:
+    """Verify Bearer token matches the API key."""
+    if credentials.credentials != _api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing API key. Use: Authorization: Bearer <API_KEY>"
+        )
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 # ── CORS — configurable via environment variable ──────────────────────────────
 # Set CORS_ORIGINS="https://app.example.com,https://admin.example.com" in prod.
@@ -258,12 +284,16 @@ def benchmarks():
 
 
 @app.post("/predict", response_model=PredictResponse)
-def predict(payload: PredictRequest, request: Request):
+def predict(payload: PredictRequest, request: Request, _: None = Depends(_verify_api_key)):
     """
-    Run inference on a feature vector.
+    Run inference on a feature vector (PROTECTED — requires API key).
 
     The expected feature length is determined by the trained model at runtime —
     no hardcoded dimensions. Works with any dataset.
+
+    Authentication:
+      - Pass API key via header: Authorization: Bearer <API_KEY>
+      - Set API_KEY environment variable to customize key (or auto-generated)
 
     Mitigations:
       2. Confidence masking — returns label only by default. Set
@@ -345,7 +375,8 @@ def attacks():
 
 
 @app.get("/privacy_log")
-def privacy_log():
+def privacy_log(_: None = Depends(_verify_api_key)):
+    """Return the privacy log (PROTECTED — requires API key)."""
     path = _find_privacy_log_path()
     if os.path.exists(path):
         with open(path) as f:
