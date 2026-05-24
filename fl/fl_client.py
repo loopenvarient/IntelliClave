@@ -41,6 +41,7 @@ class IntelliClaveClient(fl.client.NumPyClient):
         client_id: str,
         local_epochs: int = 3,
         learning_rate: float = 1e-3,
+        batch_size: int = 32,
         model_type: str = "mlp",
         # ── DP parameters — all optional, default = DP off ───────────────────────
         use_dp: bool = False,
@@ -70,7 +71,11 @@ class IntelliClaveClient(fl.client.NumPyClient):
                   "— running without encryption.")
 
         # Data loading
-        self.train_loader, self.test_loader, self.metadata = load_csv_data(csv_path)
+        self.train_loader, self.test_loader, self.metadata = load_csv_data(
+            csv_path,
+            batch_size=batch_size,
+            drop_last_for_dp=use_dp,
+        )
         self.model = get_model(
             self.metadata.input_dim,
             self.metadata.num_classes,
@@ -246,6 +251,7 @@ def start_client(
     target_epsilon: float = 10.0,
     max_grad_norm: float = 1.0,
     num_fl_rounds: int = 10,
+    batch_size: int = 32,
     use_crypto: bool = False,
     server_public_pem: bytes = None,
 ):
@@ -259,6 +265,7 @@ def start_client(
             target_epsilon=target_epsilon,
             max_grad_norm=max_grad_norm,
             num_fl_rounds=num_fl_rounds,
+            batch_size=batch_size,
             use_crypto=use_crypto,
             server_public_pem=server_public_pem,
         ),
@@ -311,6 +318,7 @@ if __name__ == "__main__":
         model_type=args.model_type,
         local_epochs=args.local_epochs,
         learning_rate=args.lr,
+        batch_size=args.batch_size,
         use_dp=args.dp,
         target_epsilon=args.epsilon,
         max_grad_norm=args.max_grad_norm,

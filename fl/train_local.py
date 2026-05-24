@@ -95,6 +95,7 @@ def train_local(
     train_loader, test_loader, metadata = load_csv_data(
         csv_path,
         batch_size=batch_size,
+        drop_last_for_dp=use_dp,
     )
     model = get_model(metadata.input_dim, metadata.num_classes, model_type=model_type).to(device)
     criterion = build_criterion(device, num_classes=metadata.num_classes, use_class_weights=use_class_weights)
@@ -175,6 +176,17 @@ def train_local(
         history_path = save_path.replace(".pth", "_history.json")
         with open(history_path, "w") as f:
             json.dump(history, f, indent=2)
+        
+        # Save preprocessing metadata alongside model so inference uses same normalization
+        from data_utils import save_preprocessing_metadata  # noqa: E402
+        save_preprocessing_metadata(
+            save_path,
+            feature_names=metadata.feature_names,
+            mean=metadata.mean,
+            std=metadata.std,
+            normalization=metadata.normalization_method,
+        )
+        
         print(f"[train_local] Saved model -> {save_path}")
         print(f"[train_local] Saved history -> {history_path}")
 

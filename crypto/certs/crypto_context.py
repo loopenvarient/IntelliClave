@@ -56,6 +56,10 @@ class CryptoContext:
         """
         Load existing keypair from disk, or generate and save a new one.
         Called once at server startup.
+        
+        Docker: In development, crypto/certs/keys is mounted read-write (no :ro)
+        to allow key generation. In production, use Docker secrets instead.
+        See docker/CRYPTO_SETUP.md for details.
         """
         os.makedirs(key_dir, exist_ok=True)
         priv_path = os.path.join(key_dir, "server_private.pem")

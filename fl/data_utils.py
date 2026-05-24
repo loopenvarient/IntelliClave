@@ -34,6 +34,51 @@ def get_class_weights_path() -> str:
     return os.path.join(get_project_root(), "data", "class_weights.json")
 
 
+def get_preprocessing_metadata_path(base_path: str) -> str:
+    """
+    Return the preprocessing metadata path for a run directory or checkpoint path.
+    """
+    if base_path.endswith(".pth"):
+        base_path = os.path.dirname(base_path)
+    return os.path.join(base_path, "preprocessing.json")
+
+
+def save_preprocessing_metadata(
+    base_path: str,
+    feature_names: List[str],
+    mean: np.ndarray,
+    std: np.ndarray,
+    normalization: str = "global",
+) -> str:
+    """
+    Persist the preprocessing stats used during training alongside a checkpoint.
+    """
+    path = get_preprocessing_metadata_path(base_path)
+    payload = {
+        "normalization": normalization,
+        "feature_names": feature_names,
+        "mean": np.asarray(mean, dtype=np.float32).tolist(),
+        "std": np.asarray(std, dtype=np.float32).tolist(),
+    }
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2)
+    return path
+
+
+def load_preprocessing_metadata(base_path: str) -> Optional[Dict]:
+    """
+    Load preprocessing metadata written by save_preprocessing_metadata().
+    """
+    path = get_preprocessing_metadata_path(base_path)
+    if not os.path.exists(path):
+        return None
+    with open(path) as f:
+        payload = json.load(f)
+    payload["mean"] = np.array(payload["mean"], dtype=np.float32)
+    payload["std"] = np.array(payload["std"], dtype=np.float32)
+    return payload
+
+
 @dataclass
 class DatasetMetadata:
     input_dim: int
@@ -95,6 +140,24 @@ def aggregate_scaler_stats(stats_list: List[ScalerStats]) -> Tuple[np.ndarray, n
     # Avoid division by zero for constant features
     global_std = np.where(global_std < 1e-8, 1.0, global_std)
     return global_mean, global_std
+
+
+def infer_default_preprocessing(n_clients: int = 3) -> Optional[Dict]:
+    """
+    Backward-compatible fallback for legacy runs that did not save preprocessing.
+    """
+    csv_paths = [path for path in get_default_client_csvs(n_clients) if os.path.exists(path)]
+    if not csv_paths:
+        return None
+    stats_list = [compute_client_scaler_stats(path) for path in csv_paths]
+    mean, std = aggregate_scaler_stats(stats_list)
+    _, feature_names = infer_csv_schema(csv_paths[0])
+    return {
+        "normalization": "global",
+        "feature_names": feature_names,
+        "mean": mean,
+        "std": std,
+    }
 
 
 class CSVDataset(Dataset):

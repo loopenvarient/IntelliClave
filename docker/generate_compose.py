@@ -41,7 +41,7 @@ def generate(n_clients: int, out_path: str):
         '      - "8080:8080"',
         "    volumes:",
         "      - server-results:/app/results",
-        "      - ../crypto/certs/keys:/app/crypto/certs/keys:ro",
+        "      - ../crypto/certs/keys:/app/crypto/certs/keys",
         "    networks:",
         "      - fl-net",
         "    environment:",

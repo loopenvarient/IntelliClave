@@ -272,6 +272,8 @@ python docker/generate_compose.py --clients 5
 docker compose -f docker/docker-compose.generated.yml up --build
 ```
 
+> **Crypto key setup**: On first run, RSA keys are automatically generated and saved to `crypto/certs/keys/`. See [`docker/CRYPTO_SETUP.md`](docker/CRYPTO_SETUP.md) for production deployment with Docker secrets or Kubernetes.
+
 ### Kubernetes (minikube)
 
 ```bash

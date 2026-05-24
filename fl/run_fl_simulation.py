@@ -54,13 +54,24 @@ class SimClient(fl.client.NumPyClient):
         learning_rate: float,
         model_type: str = "mlp",
         batch_size: int = 32,
+        use_dp: bool = False,
+        target_epsilon: float = 10.0,
+        max_grad_norm: float = 1.0,
+        num_fl_rounds: int = NUM_ROUNDS,
     ):
         self.cid          = cid
         self.local_epochs = local_epochs
         self.device       = torch.device("cpu")
+        self.use_dp       = use_dp
+        self.target_epsilon = target_epsilon
+        self.max_grad_norm = max_grad_norm
+        self.num_fl_rounds = num_fl_rounds
+        self.privacy_engine = None
 
         self.train_loader, self.test_loader, self.metadata = load_csv_data(
-            csv_path, batch_size=batch_size
+            csv_path,
+            batch_size=batch_size,
+            drop_last_for_dp=use_dp,
         )
         self.model = get_model(
             self.metadata.input_dim,
@@ -72,6 +83,46 @@ class SimClient(fl.client.NumPyClient):
         )
         self.criterion = nn.CrossEntropyLoss(weight=class_weights)
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
+        self.target_delta = 1.0 / self.metadata.train_size
+
+        if self.use_dp:
+            self._attach_privacy_engine()
+
+    def _attach_privacy_engine(self) -> None:
+        """
+        Attach Opacus to the simulation client so privacy metrics mirror the
+        distributed FL client path.
+        """
+        try:
+            from opacus import PrivacyEngine
+            from opacus.validators import ModuleValidator
+
+            errors = ModuleValidator.validate(self.model, strict=False)
+            if errors:
+                print(f"[SimClient {self.cid}][DP] Auto-fixing model: {errors}")
+                self.model = ModuleValidator.fix(self.model)
+
+            total_epochs = self.local_epochs * self.num_fl_rounds
+            self.privacy_engine = PrivacyEngine()
+            self.model, self.optimizer, self.train_loader = (
+                self.privacy_engine.make_private_with_epsilon(
+                    module=self.model,
+                    optimizer=self.optimizer,
+                    data_loader=self.train_loader,
+                    epochs=total_epochs,
+                    target_epsilon=self.target_epsilon,
+                    target_delta=self.target_delta,
+                    max_grad_norm=self.max_grad_norm,
+                )
+            )
+            print(
+                f"[SimClient {self.cid}][DP] PrivacyEngine attached: "
+                f"ε={self.target_epsilon}, δ={self.target_delta:.2e}, "
+                f"max_grad_norm={self.max_grad_norm}, total_epochs={total_epochs}"
+            )
+        except ImportError:
+            print(f"[SimClient {self.cid}][DP] WARNING: Opacus not installed. Running without DP.")
+            self.use_dp = False
 
     def get_parameters(self, config):
         return [value.cpu().numpy() for value in self.model.state_dict().values()]
@@ -94,10 +145,20 @@ class SimClient(fl.client.NumPyClient):
             )
         # Report validation accuracy (test split), not training accuracy
         accuracy, macro_f1 = evaluate(self.model, self.test_loader, self.device)
+        metrics = {
+            "loss": float(loss),
+            "accuracy": float(accuracy),
+            "macro_f1": float(macro_f1),
+        }
+        if self.use_dp and self.privacy_engine is not None:
+            eps = self.privacy_engine.get_epsilon(delta=self.target_delta)
+            metrics["epsilon"] = float(eps)
+            metrics["delta"] = float(self.target_delta)
+            metrics["client_id"] = self.cid
         return (
             self.get_parameters({}),
             len(self.train_loader.dataset),
-            {"loss": float(loss), "accuracy": float(accuracy), "macro_f1": float(macro_f1)},
+            metrics,
         )
 
     def evaluate(self, params, config):
@@ -133,6 +194,9 @@ def main(
     early_stopping_patience: int = 0,
     early_stopping_metric: str = "loss",
     monitor_distributions: bool = True,
+    use_dp: bool = False,
+    target_epsilon: float = 10.0,
+    max_grad_norm: float = 1.0,
 ):
     # Auto-generate timestamped save dir
     if not save_dir:
@@ -163,6 +227,10 @@ def main(
             learning_rate=learning_rate,
             model_type=model_type,
             batch_size=batch_size,
+            use_dp=use_dp,
+            target_epsilon=target_epsilon,
+            max_grad_norm=max_grad_norm,
+            num_fl_rounds=num_rounds,
         )
 
     strategy = build_strategy(
@@ -257,6 +325,12 @@ if __name__ == "__main__":
     parser.add_argument("--early-stopping-metric", default="loss",
                         choices=["loss", "accuracy", "macro_f1"],
                         help="Metric to monitor for early stopping.")
+    parser.add_argument("--dp", action="store_true",
+                        help="Enable Differential Privacy via Opacus.")
+    parser.add_argument("--epsilon", type=float, default=10.0,
+                        help="Target epsilon (privacy budget) when --dp is enabled.")
+    parser.add_argument("--max-grad-norm", type=float, default=1.0,
+                        help="Gradient clipping norm for DP-SGD.")
     parser.add_argument("--no-distribution-monitor", action="store_true",
                         help="Skip the pre-training distribution report.")
     args = parser.parse_args()
@@ -274,4 +348,7 @@ if __name__ == "__main__":
         early_stopping_patience=args.early_stopping_patience,
         early_stopping_metric=args.early_stopping_metric,
         monitor_distributions=not args.no_distribution_monitor,
+        use_dp=args.dp,
+        target_epsilon=args.epsilon,
+        max_grad_norm=args.max_grad_norm,
     )

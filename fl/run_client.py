@@ -90,6 +90,7 @@ if __name__ == "__main__":
         model_type=args.model_type,
         local_epochs=args.local_epochs,
         learning_rate=args.lr,
+        batch_size=args.batch_size,
         use_crypto=args.crypto,
         server_public_pem=server_public_pem,
         use_dp=args.dp,

@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sys
+import timeit
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -14,6 +15,9 @@ import numpy as np
 import pandas as pd
 import torch
 from flwr.common import Metrics
+from flwr.common.logger import log
+from flwr.server.history import History
+from logging import INFO
 
 sys.path.insert(0, os.path.dirname(__file__))
 from data_utils import (  # noqa: E402
@@ -46,6 +50,75 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+class EarlyStoppingServer(fl.server.Server):
+    """
+    Flower server that exits the FL round loop when the strategy triggers
+    early stopping.
+    """
+
+    def fit(self, num_rounds: int, timeout: Optional[float]) -> History:
+        history = History()
+
+        log(INFO, "Initializing global parameters")
+        self.parameters = self._get_initial_parameters(timeout=timeout)
+        log(INFO, "Evaluating initial parameters")
+        res = self.strategy.evaluate(0, parameters=self.parameters)
+        if res is not None:
+            history.add_loss_centralized(server_round=0, loss=res[0])
+            history.add_metrics_centralized(server_round=0, metrics=res[1])
+
+        log(INFO, "FL starting")
+        start_time = timeit.default_timer()
+
+        for current_round in range(1, num_rounds + 1):
+            res_fit = self.fit_round(
+                server_round=current_round,
+                timeout=timeout,
+            )
+            if res_fit is not None:
+                parameters_prime, fit_metrics, _ = res_fit
+                if parameters_prime:
+                    self.parameters = parameters_prime
+                history.add_metrics_distributed_fit(
+                    server_round=current_round, metrics=fit_metrics
+                )
+
+            res_cen = self.strategy.evaluate(current_round, parameters=self.parameters)
+            if res_cen is not None:
+                loss_cen, metrics_cen = res_cen
+                log(
+                    INFO,
+                    "fit progress: (%s, %s, %s, %s)",
+                    current_round,
+                    loss_cen,
+                    metrics_cen,
+                    timeit.default_timer() - start_time,
+                )
+                history.add_loss_centralized(server_round=current_round, loss=loss_cen)
+                history.add_metrics_centralized(
+                    server_round=current_round, metrics=metrics_cen
+                )
+
+            res_fed = self.evaluate_round(server_round=current_round, timeout=timeout)
+            if res_fed is not None:
+                loss_fed, evaluate_metrics_fed, _ = res_fed
+                if loss_fed is not None:
+                    history.add_loss_distributed(
+                        server_round=current_round, loss=loss_fed
+                    )
+                    history.add_metrics_distributed(
+                        server_round=current_round, metrics=evaluate_metrics_fed
+                    )
+
+            if getattr(self.strategy, "_es_triggered", False):
+                log(INFO, "Early stopping triggered at round %s", current_round)
+                break
+
+        elapsed = timeit.default_timer() - start_time
+        log(INFO, "FL finished in %s", elapsed)
+        return history
+
+
 class SaveModelStrategy(fl.server.strategy.FedAvg):
     def __init__(
         self,
@@ -55,6 +128,7 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         save_dir: str = "results/fl_rounds",
         crypto_ctx: "CryptoContext" = None,
         model_type: str = "mlp",
+        preprocessing_metadata: Optional[Dict] = None,
         # ── Early stopping ────────────────────────────────────────────────────
         early_stopping_patience: int = 0,
         early_stopping_metric: str = "loss",
@@ -72,6 +146,7 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         self.privacy_log: List[Dict] = []
         self._crypto_ctx = crypto_ctx
         self.use_crypto  = crypto_ctx is not None
+        self._preprocessing_metadata = preprocessing_metadata or {}
 
         # Early stopping state
         self._es_patience  = early_stopping_patience
@@ -224,6 +299,18 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         }
         with open(meta_path, "w") as f:
             json.dump(meta, f, indent=2)
+
+        # Save preprocessing metadata (normalization stats) alongside checkpoint
+        # so inference uses the same normalization as training
+        if hasattr(self, "_preprocessing_metadata") and self._preprocessing_metadata:
+            from data_utils import save_preprocessing_metadata  # noqa: E402
+            save_preprocessing_metadata(
+                latest_path,
+                feature_names=self._preprocessing_metadata.get("feature_names", []),
+                mean=np.array(self._preprocessing_metadata.get("mean", [])),
+                std=np.array(self._preprocessing_metadata.get("std", [])),
+                normalization=self._preprocessing_metadata.get("normalization", "global"),
+            )
 
         # Seal checkpoints to the server enclave identity
         if _SEALED_STORAGE_AVAILABLE:
@@ -414,6 +501,7 @@ def build_strategy(
     early_stopping_metric: str = "loss",
     early_stopping_min_delta: float = 1e-4,
     model_type: str = "mlp",
+    preprocessing_metadata: Optional[Dict] = None,
 ) -> "SaveModelStrategy":
     """
     Build the FL aggregation strategy.
@@ -423,6 +511,7 @@ def build_strategy(
     fraction_fit            : fraction of clients per round (1.0 = all)
     early_stopping_patience : stop if no improvement for N rounds (0 = off)
     early_stopping_metric   : "loss" | "accuracy" | "macro_f1"
+    preprocessing_metadata  : dict with normalization stats to save alongside checkpoints
     """
     common_kwargs = dict(
         input_dim=input_dim,
@@ -431,6 +520,7 @@ def build_strategy(
         save_dir=save_dir,
         crypto_ctx=crypto_ctx,
         model_type=model_type,
+        preprocessing_metadata=preprocessing_metadata,
         fraction_fit=fraction_fit,
         fraction_evaluate=fraction_evaluate,
         min_fit_clients=max(1, int(min_clients * fraction_fit)),
@@ -486,16 +576,29 @@ def start_server(
     os.makedirs(save_dir, exist_ok=True)
     print(f"[Server] Results will be saved to: {save_dir}")
 
-    # Infer num_classes from data if not explicitly provided
+    # Infer num_classes and class_names from data if not explicitly provided
     if num_classes <= 0:
         num_classes = infer_default_num_classes()
         print(f"[Server] Inferred num_classes={num_classes} from default client CSV.")
+    
+    if class_names is None:
+        from data_utils import infer_class_names  # noqa: E402
+        first_csv = get_default_client_csvs()[0]
+        if os.path.exists(first_csv):
+            class_names = infer_class_names(first_csv)
+            print(f"[Server] Inferred class_names={class_names} from {os.path.basename(first_csv)}")
 
     # Distribution monitoring — run before training starts
     csv_paths = get_default_client_csvs()
     existing_csvs = [p for p in csv_paths if os.path.exists(p)]
     if monitor_distributions and existing_csvs:
         monitor_client_distributions(existing_csvs, save_dir=save_dir)
+    
+    # Coordinate global normalization across all clients
+    global_mean, global_std = None, None
+    if existing_csvs:
+        global_mean, global_std = coordinate_global_normalization(existing_csvs)
+        print(f"[Server] Global normalization will be broadcast to all clients.")
     crypto_ctx = None
     if use_crypto and _CRYPTO_AVAILABLE:
         crypto_ctx = CryptoContext.load_or_create()
@@ -512,6 +615,21 @@ def start_server(
     elif use_crypto:
         print("[Server][Crypto] WARNING: crypto unavailable — starting without encryption.")
 
+    # Prepare preprocessing metadata for saving alongside checkpoints
+    preprocessing_metadata = {}
+    if global_mean is not None and global_std is not None:
+        preprocessing_metadata = {
+            "mean": global_mean.tolist() if hasattr(global_mean, "tolist") else global_mean,
+            "std": global_std.tolist() if hasattr(global_std, "tolist") else global_std,
+            "normalization": "global",
+        }
+        if existing_csvs:
+            from data_utils import load_csv_data  # noqa: E402
+            _, feature_names, _ = load_csv_data(
+                existing_csvs[0], target_col="label", use_dp=False, batch_size=1
+            )
+            preprocessing_metadata["feature_names"] = feature_names
+
     strategy = build_strategy(
         strategy_name=strategy_name,
         input_dim=input_dim,
@@ -527,6 +645,7 @@ def start_server(
         early_stopping_patience=early_stopping_patience,
         early_stopping_metric=early_stopping_metric,
         model_type=model_type,
+        preprocessing_metadata=preprocessing_metadata,
     )
     fl.server.start_server(
         server_address=server_address,
