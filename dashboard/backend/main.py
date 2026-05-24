@@ -110,6 +110,17 @@ def _find_meta_path(model_path: str) -> str:
     return os.path.join(os.path.dirname(model_path), "model_meta.json")
 
 
+def _find_privacy_log_path() -> str:
+    """
+    Return the privacy log path for the currently active model run.
+
+    The FL server writes run-scoped privacy telemetry beside the checkpoint as
+    fl_privacy.json, so the dashboard should read that same artifact.
+    """
+    model_path = _find_latest_model_path()
+    return os.path.join(os.path.dirname(model_path), "fl_privacy.json")
+
+
 def _load_model_meta(model_path: str) -> dict:
     """Load model_meta.json. Falls back to inferring from processed CSVs."""
     meta_path = _find_meta_path(model_path)
@@ -335,7 +346,21 @@ def attacks():
 
 @app.get("/privacy_log")
 def privacy_log():
-    return _read_json("results/privacy_log.json")
+    path = _find_privacy_log_path()
+    if os.path.exists(path):
+        with open(path) as f:
+            return json.load(f)
+
+    # Backward-compatible fallback for older demo artifacts.
+    legacy_path = os.path.join(ROOT, "results", "privacy_log.json")
+    if os.path.exists(legacy_path):
+        with open(legacy_path) as f:
+            return json.load(f)
+
+    raise HTTPException(
+        status_code=404,
+        detail="Privacy log not found for the active run.",
+    )
 
 
 @app.get("/query_stats")
