@@ -16,12 +16,14 @@ import os
 import sys
 import time
 from collections import defaultdict
-from typing import List
+from typing import List, Optional, Dict, Any
 
 import torch
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import secrets
 from pydantic import BaseModel
 
 # ── model imports ─────────────────────────────────────────────────────────────
@@ -33,6 +35,61 @@ from model import get_model  # noqa: E402
 # ─────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="IntelliClave Dashboard API", version="1.0.0")
+
+# ── Simple token-based auth (in-memory). Configure via DASHBOARD_USERS env var
+# DASHBOARD_USERS expected JSON: {"username": {"password": "pw", "token": "tok", "role": "admin"}, ...}
+import os as _os
+import json as _json
+
+_default_users = {
+    "admin": {"password": "adminpass", "token": "admin-token-123", "role": "admin"},
+    "viewer": {"password": "viewerpass", "token": "viewer-token-abc", "role": "viewer"},
+}
+
+_users = _default_users
+try:
+    env_users = _os.environ.get("DASHBOARD_USERS")
+    if env_users:
+        parsed = _json.loads(env_users)
+        if isinstance(parsed, dict):
+            _users = parsed
+except Exception:
+    # ignore parsing errors and fall back to defaults
+    pass
+
+# Build token->user map for fast lookup
+TOKEN_STORE = {u["token"]: {"username": name, "role": u.get("role", "viewer")} for name, u in _users.items()}
+
+security = HTTPBearer(auto_error=False)
+ISSUED_TOKEN_STORE = {}
+
+
+def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
+    if credentials is None:
+        return {"username": "anonymous", "role": "viewer", "is_anonymous": True}
+
+    token = credentials.credentials
+    # 1) Legacy token check
+    user = TOKEN_STORE.get(token)
+    if user:
+        return user
+
+    # 2) Issued bearer token check
+    user = ISSUED_TOKEN_STORE.get(token)
+    if user:
+        return user
+
+    raise HTTPException(status_code=401, detail="Invalid or missing authentication token")
+
+
+def require_authenticated(user=Depends(get_current_user)):
+    return user
+
+
+def require_admin(user=Depends(get_current_user)):
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    return user
 
 # ── CORS — configurable via environment variable ──────────────────────────────
 # Set CORS_ORIGINS="https://app.example.com,https://admin.example.com" in prod.
@@ -213,6 +270,54 @@ class PredictResponse(BaseModel):
     predicted_class: int
     predicted_label: str
     confidence: float | None = None
+# Additional response models for stricter API schemas
+
+
+class ClientInfo(BaseModel):
+    client_id: Optional[str] = None
+    id: Optional[str] = None
+    status: Optional[str] = None
+    samples: Optional[int] = None
+
+
+class StatusResponse(BaseModel):
+    round: Optional[int] = None
+    total_rounds: Optional[int] = None
+    clients: List[Dict[str, Any]] = []
+    loss: Optional[float] = None
+    accuracy: Optional[float] = None
+    macro_f1: Optional[float] = None
+    save_dir: Optional[str] = None
+    model_type: Optional[str] = None
+    early_stopped: Optional[bool] = None
+    epsilon: Optional[float] = None
+    training_active: Optional[bool] = False
+
+
+class ResultsResponse(BaseModel):
+    rounds: List[Dict[str, Any]] = []
+    save_dir: Optional[str] = None
+    per_class_f1: Optional[Dict[str, float]] = None
+
+
+class AttackSummary(BaseModel):
+    verdict: Optional[str] = None
+    avg_cosine_similarity: Optional[float] = None
+    auc: Optional[float] = None
+    accuracy_drop: Optional[float] = None
+
+
+class AttacksResponse(BaseModel):
+    model_inversion: Optional[Dict[str, Any]] = None
+    membership_inference: Optional[Dict[str, Any]] = None
+    gradient_poisoning: Optional[Dict[str, Any]] = None
+
+
+class PrivacyLogEntry(BaseModel):
+    round: Optional[int] = None
+    epsilon: Optional[float] = None
+    avg_epsilon: Optional[float] = None
+    clients: Optional[List[Dict[str, Any]]] = None
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -229,8 +334,27 @@ def health():
     return {"status": "ok"}
 
 
-@app.get("/status")
-def status():
+@app.post("/token")
+async def token(request: Request):
+    """Exchange username/password for a bearer token (development only).
+
+    Supply `DASHBOARD_USERS` env var in production instead of this ad-hoc store.
+    """
+    form_data = await request.form()
+    username = str(form_data.get("username", ""))
+    password = str(form_data.get("password", ""))
+    user = _users.get(username)
+    if not user or user.get("password") != password:
+        raise HTTPException(status_code=400, detail="Invalid credentials")
+
+    # Issue opaque bearer token for local dashboard auth.
+    token = secrets.token_urlsafe(32)
+    ISSUED_TOKEN_STORE[token] = {"username": username, "role": user.get("role", "viewer")}
+    return {"access_token": token, "token_type": "bearer", "role": user.get("role")}
+
+
+@app.get("/status", response_model=StatusResponse)
+def status(user=Depends(get_current_user)):
     """
     Return the latest training run summary.
     Written by run_fl_simulation.py / fl_server.py after training completes.
@@ -276,8 +400,8 @@ def status():
     return status_obj
 
 
-@app.get("/results")
-def results():
+@app.get("/results", response_model=ResultsResponse)
+def results(user=Depends(get_current_user)):
     """
     Return the full round-by-round metrics from the latest training run.
     Written by run_fl_simulation.py / fl_server.py after training completes.
@@ -286,17 +410,17 @@ def results():
 
 
 @app.get("/attestation")
-def attestation():
+def attestation(user=Depends(get_current_user)):
     return _read_json("attestation.json")
 
 
 @app.get("/benchmarks")
-def benchmarks():
+def benchmarks(user=Depends(get_current_user)):
     return _read_json("results/benchmarks_baseline.json")
 
 
 @app.post("/predict", response_model=PredictResponse)
-def predict(payload: PredictRequest, request: Request):
+def predict(payload: PredictRequest, request: Request, user=Depends(require_authenticated)):
     """
     Run inference on a feature vector.
 
@@ -362,8 +486,8 @@ def predict(payload: PredictRequest, request: Request):
     )
 
 
-@app.get("/attacks")
-def attacks():
+@app.get("/attacks", response_model=AttacksResponse)
+def attacks(user=Depends(get_current_user)):
     """Return security attack simulation results for the dashboard."""
     out = {}
     attack_files = {
@@ -382,8 +506,8 @@ def attacks():
     return out
 
 
-@app.get("/privacy_log")
-def privacy_log():
+@app.get("/privacy_log", response_model=List[PrivacyLogEntry])
+def privacy_log(user=Depends(get_current_user)):
     path = _find_privacy_log_path()
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
@@ -447,7 +571,7 @@ def privacy_log():
 
 
 @app.get("/query_stats")
-def query_stats(request: Request):
+def query_stats(request: Request, user=Depends(get_current_user)):
     """Show rate limit status for the calling IP."""
     client_ip = request.client.host
     now    = time.time()
@@ -467,7 +591,7 @@ def query_stats(request: Request):
 
 
 @app.get("/model_info")
-def model_info():
+def model_info(user=Depends(get_current_user)):
     """Return metadata about the currently loaded model."""
     model_path = _find_latest_model_path()
     if not os.path.exists(model_path):

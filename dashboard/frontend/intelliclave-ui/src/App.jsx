@@ -490,17 +490,39 @@ export default function App() {
   const [activePage,  setActivePage]  = useState('overview')
   const [lastPoll,    setLastPoll]    = useState(null)
   const [backendUp,   setBackendUp]   = useState(false)
+  const [authToken,   setAuthToken]   = useState(localStorage.getItem('intelliclave_token'))
+  const [authRole,    setAuthRole]    = useState(localStorage.getItem('intelliclave_role'))
+  const [showLogin,   setShowLogin]   = useState(false)
+  const [loginUser,   setLoginUser]   = useState('')
+  const [loginPass,   setLoginPass]   = useState('')
 
   useEffect(() => {
+    if (authToken) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${authToken}`
+    } else {
+      delete axios.defaults.headers.common['Authorization']
+    }
+
     const poll = async () => {
+      if (!authToken) {
+        setBackendUp(false)
+        return
+      }
+
+      const authConfig = {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      }
+
       try {
         const [s, r, b, a, p, atk] = await Promise.allSettled([
-          axios.get(`${API}/status`),
-          axios.get(`${API}/results`),
-          axios.get(`${API}/benchmarks`),
-          axios.get(`${API}/attestation`),
-          axios.get(`${API}/privacy_log`),
-          axios.get(`${API}/attacks`),
+          axios.get(`${API}/status`, authConfig),
+          axios.get(`${API}/results`, authConfig),
+          axios.get(`${API}/benchmarks`, authConfig),
+          axios.get(`${API}/attestation`, authConfig),
+          axios.get(`${API}/privacy_log`, authConfig),
+          axios.get(`${API}/attacks`, authConfig),
         ])
 
         const statusData = s.status === 'fulfilled' ? s.value.data : DUMMY_STATUS
@@ -558,7 +580,35 @@ export default function App() {
     poll()
     const id = setInterval(poll, 5000)
     return () => clearInterval(id)
-  }, [])
+  }, [authToken])
+
+  async function doLogin(e) {
+    e.preventDefault()
+    try {
+      const params = new URLSearchParams()
+      params.append('username', loginUser)
+      params.append('password', loginPass)
+      const res = await axios.post(`${API}/token`, params)
+      const token = res.data.access_token
+      const role = res.data.role
+      localStorage.setItem('intelliclave_token', token)
+      localStorage.setItem('intelliclave_role', role)
+      setAuthToken(token)
+      setAuthRole(role)
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+      setShowLogin(false)
+    } catch (err) {
+      alert('Login failed')
+    }
+  }
+
+  function doLogout() {
+    localStorage.removeItem('intelliclave_token')
+    localStorage.removeItem('intelliclave_role')
+    setAuthToken(null)
+    setAuthRole(null)
+    delete axios.defaults.headers.common['Authorization']
+  }
 
   // TEE badge — wired to live attestation data
   const attVerified = attestation?.tee_verified === true && attestation?.status === 'VERIFIED'
@@ -668,6 +718,24 @@ export default function App() {
               <span className="poll-indicator">
                 {backendUp ? `Last sync ${lastPoll}` : 'Backend offline'}
               </span>
+            )}
+            <div style={{ marginLeft: 12 }}>
+              {authToken ? (
+                <>
+                  <button className="btn" onClick={doLogout}>Logout</button>
+                </>
+              ) : (
+                <>
+                  <button className="btn" onClick={() => setShowLogin(!showLogin)}>Login</button>
+                </>
+              )}
+            </div>
+            {showLogin && !authToken && (
+              <form className="login-form" onSubmit={doLogin} style={{ display: 'flex', gap: 8, alignItems: 'center', marginLeft: 8 }}>
+                <input placeholder="username" value={loginUser} onChange={e => setLoginUser(e.target.value)} />
+                <input placeholder="password" type="password" value={loginPass} onChange={e => setLoginPass(e.target.value)} />
+                <button className="btn" type="submit">OK</button>
+              </form>
             )}
           </div>
         </div>

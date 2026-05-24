@@ -1,37 +1,37 @@
 [
   {
     "fl_round": 1,
-    "epsilon_consumed": 4.7837,
-    "budget_remaining": 5.2163,
+    "epsilon_consumed": 5.4096,
+    "budget_remaining": 4.5904,
     "budget_exhausted": false,
-    "test_accuracy": 0.5668
+    "test_accuracy": 0.3237
   },
   {
     "fl_round": 2,
-    "epsilon_consumed": 6.406,
-    "budget_remaining": 3.594,
+    "epsilon_consumed": 6.8749,
+    "budget_remaining": 3.1251,
     "budget_exhausted": false,
-    "test_accuracy": 0.6989
+    "test_accuracy": 0.4058
   },
   {
     "fl_round": 3,
-    "epsilon_consumed": 7.7362,
-    "budget_remaining": 2.2638,
+    "epsilon_consumed": 8.0452,
+    "budget_remaining": 1.9548,
     "budget_exhausted": false,
-    "test_accuracy": 0.789
+    "test_accuracy": 0.5443
   },
   {
     "fl_round": 4,
-    "epsilon_consumed": 8.9152,
-    "budget_remaining": 1.0848,
+    "epsilon_consumed": 9.0657,
+    "budget_remaining": 0.9343,
     "budget_exhausted": false,
-    "test_accuracy": 0.8309
+    "test_accuracy": 0.5894
   },
   {
     "fl_round": 5,
-    "epsilon_consumed": 9.9974,
-    "budget_remaining": 0.0026,
+    "epsilon_consumed": 9.9917,
+    "budget_remaining": 0.0083,
     "budget_exhausted": false,
-    "test_accuracy": 0.8696
+    "test_accuracy": 0.6667
   }
 ]
