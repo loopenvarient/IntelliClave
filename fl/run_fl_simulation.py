@@ -13,7 +13,7 @@ import os
 import sys
 from collections import OrderedDict
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import flwr as fl
 import numpy as np
@@ -25,14 +25,17 @@ from flwr.common import Metrics
 sys.path.insert(0, os.path.dirname(__file__))
 from data_utils import (  # noqa: E402
     get_default_client_csvs,
+    infer_csv_schema,
     load_class_weights,
     load_csv_data,
+    persist_run_preprocessing,
     validate_client_schemas,
 )
 from fl_server import (  # noqa: E402
     SaveModelStrategy,
     _write_run_summary,
     build_strategy,
+    coordinate_global_normalization,
     make_timestamped_save_dir,
     monitor_client_distributions,
     weighted_average,
@@ -58,6 +61,8 @@ class SimClient(fl.client.NumPyClient):
         target_epsilon: float = 10.0,
         max_grad_norm: float = 1.0,
         num_fl_rounds: int = NUM_ROUNDS,
+        global_mean: Optional[np.ndarray] = None,
+        global_std: Optional[np.ndarray] = None,
     ):
         self.cid          = cid
         self.local_epochs = local_epochs
@@ -72,6 +77,8 @@ class SimClient(fl.client.NumPyClient):
             csv_path,
             batch_size=batch_size,
             drop_last_for_dp=use_dp,
+            global_mean=global_mean,
+            global_std=global_std,
         )
         self.model = get_model(
             self.metadata.input_dim,
@@ -217,7 +224,29 @@ def main(
     if monitor_distributions:
         monitor_client_distributions(csv_files, save_dir=save_dir)
 
-    _, _, metadata = load_csv_data(csv_files[0], batch_size=batch_size)
+    global_mean, global_std = coordinate_global_normalization(csv_files)
+    _, feature_names = infer_csv_schema(csv_files[0])
+    preprocessing_metadata = {
+        "mean": global_mean.tolist(),
+        "std": global_std.tolist(),
+        "normalization": "global",
+        "feature_names": feature_names,
+    }
+    prep_path, norm_path = persist_run_preprocessing(
+        save_dir,
+        feature_names=feature_names,
+        mean=global_mean,
+        std=global_std,
+        normalization="global",
+    )
+    print(f"[Simulation] Saved {prep_path} and {norm_path}")
+
+    _, _, metadata = load_csv_data(
+        csv_files[0],
+        batch_size=batch_size,
+        global_mean=global_mean,
+        global_std=global_std,
+    )
 
     def client_fn(cid: str):
         return SimClient(
@@ -231,6 +260,8 @@ def main(
             target_epsilon=target_epsilon,
             max_grad_norm=max_grad_norm,
             num_fl_rounds=num_rounds,
+            global_mean=global_mean,
+            global_std=global_std,
         )
 
     strategy = build_strategy(
@@ -248,6 +279,9 @@ def main(
         early_stopping_patience=early_stopping_patience,
         early_stopping_metric=early_stopping_metric,
         model_type=model_type,
+        preprocessing_metadata=preprocessing_metadata,
+        global_mean=global_mean,
+        global_std=global_std,
     )
 
     try:
@@ -294,6 +328,16 @@ def main(
 
     # Write status.json and results/results.json for the dashboard
     _write_run_summary(save_dir, strategy)
+
+    # Ensure preprocessing artifacts exist after training (updated each round in strategy)
+    prep_path, norm_path = persist_run_preprocessing(
+        save_dir,
+        feature_names=feature_names,
+        mean=global_mean,
+        std=global_std,
+        normalization="global",
+    )
+    print(f"[Simulation] Preprocessing artifacts -> {prep_path}, {norm_path}")
 
 
 if __name__ == "__main__":

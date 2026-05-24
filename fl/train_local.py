@@ -23,9 +23,12 @@ from sklearn.metrics import accuracy_score, f1_score
 
 sys.path.insert(0, os.path.dirname(__file__))
 from data_utils import (  # noqa: E402
+    compute_client_scaler_stats,
     get_default_client_csvs,
+    get_preprocessing_metadata_path,
     load_class_weights,
     load_csv_data,
+    save_preprocessing_metadata,
 )
 from model import get_model  # noqa: E402
 
@@ -177,18 +180,22 @@ def train_local(
         with open(history_path, "w") as f:
             json.dump(history, f, indent=2)
         
-        # Save preprocessing metadata alongside model so inference uses same normalization
-        from data_utils import save_preprocessing_metadata  # noqa: E402
+        # Save preprocessing stats from the same train split used by load_csv_data()
+        scaler_stats = compute_client_scaler_stats(csv_path)
         save_preprocessing_metadata(
             save_path,
             feature_names=metadata.feature_names,
-            mean=metadata.mean,
-            std=metadata.std,
-            normalization=metadata.normalization_method,
+            mean=scaler_stats.mean,
+            std=scaler_stats.std,
+            normalization="per_client",
         )
-        
+
         print(f"[train_local] Saved model -> {save_path}")
         print(f"[train_local] Saved history -> {history_path}")
+        print(
+            f"[train_local] Saved preprocessing -> "
+            f"{get_preprocessing_metadata_path(save_path)}"
+        )
 
     if use_dp and privacy_engine is not None:
         final_eps = privacy_engine.get_epsilon(delta=1.0 / metadata.train_size)

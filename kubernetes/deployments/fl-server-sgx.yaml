@@ -93,6 +93,9 @@ spec:
         - name: crypto-keys
           mountPath: /app/crypto/certs/keys
           readOnly: true
+        - name: processed-data
+          mountPath: /app/data/processed
+          readOnly: true
         - name: tee-files
           mountPath: /app/tee
         - name: sgx-device
@@ -107,6 +110,9 @@ spec:
       - name: crypto-keys
         secret:
           secretName: fl-crypto-keys
+      - name: processed-data
+        persistentVolumeClaim:
+          claimName: fl-shared-storage
       - name: tee-files
         emptyDir: {}
       - name: sgx-device

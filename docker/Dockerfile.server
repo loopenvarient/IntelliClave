@@ -24,6 +24,7 @@ RUN pip install --no-cache-dir \
     numpy==1.24.3 \
     pandas==2.0.3 \
     scikit-learn==1.3.2 \
+    scipy==1.11.4 \
     flwr==1.6.0 \
     cryptography==41.0.7
 
@@ -31,6 +32,15 @@ RUN pip install --no-cache-dir \
 COPY fl/                         ./fl/
 COPY crypto/                     ./crypto/
 COPY data/class_weights.json     ./data/class_weights.json
+
+# Client CSVs — required for input_dim inference, distribution report, and
+# global normalization coordination (Bug #6). Compose also mounts this dir :ro
+# so host updates apply without rebuild.
+RUN mkdir -p data/processed
+COPY data/processed/client1.csv \
+     data/processed/client2.csv \
+     data/processed/client3.csv \
+     ./data/processed/
 
 # Results directory for model checkpoints and privacy logs
 RUN mkdir -p results/fl_rounds

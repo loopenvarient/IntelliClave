@@ -34,6 +34,8 @@ services:
     volumes:
       - server-results:/app/results
       - ../crypto/certs/keys:/app/crypto/certs/keys
+      # Server reads all client CSVs for schema inference + global normalization
+      - ../data/processed:/app/data/processed:ro
     networks:
       - fl-net
     environment:

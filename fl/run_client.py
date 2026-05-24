@@ -46,6 +46,12 @@ if __name__ == "__main__":
                         help="Total FL rounds — must match server --rounds.")
     parser.add_argument("--attest", action="store_true",
                         help="Verify server SGX attestation before connecting.")
+    parser.add_argument(
+        "--norm-config",
+        default=None,
+        help="Path to global_normalization.json from the FL server run directory "
+             "(optional; stats are also applied from server round config).",
+    )
     args = parser.parse_args()
 
     # Verify server attestation before connecting
@@ -96,4 +102,5 @@ if __name__ == "__main__":
         use_dp=args.dp,
         target_epsilon=args.epsilon,
         num_fl_rounds=args.rounds,
+        norm_config_path=args.norm_config,
     )

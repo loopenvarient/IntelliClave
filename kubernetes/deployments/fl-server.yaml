@@ -40,6 +40,10 @@ spec:
         - name: crypto-keys
           mountPath: /app/crypto/certs/keys
           readOnly: true
+        # All client CSVs — global normalization + distribution report (see Bug #6)
+        - name: processed-data
+          mountPath: /app/data/processed
+          readOnly: true
       volumes:
       - name: server-storage
         persistentVolumeClaim:
@@ -47,3 +51,6 @@ spec:
       - name: crypto-keys
         secret:
           secretName: fl-crypto-keys
+      - name: processed-data
+        persistentVolumeClaim:
+          claimName: fl-shared-storage

@@ -26,6 +26,8 @@ from data_utils import (  # noqa: E402
     compute_client_scaler_stats,
     get_default_client_csvs,
     infer_csv_schema,
+    make_fl_round_config,
+    persist_run_preprocessing,
 )
 from model import get_model  # noqa: E402
 
@@ -302,14 +304,17 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
 
         # Save preprocessing metadata (normalization stats) alongside checkpoint
         # so inference uses the same normalization as training
-        if hasattr(self, "_preprocessing_metadata") and self._preprocessing_metadata:
+        meta = getattr(self, "_preprocessing_metadata", None) or {}
+        mean = meta.get("mean")
+        std = meta.get("std")
+        if mean is not None and std is not None and len(mean) > 0 and len(std) > 0:
             from data_utils import save_preprocessing_metadata  # noqa: E402
             save_preprocessing_metadata(
                 latest_path,
-                feature_names=self._preprocessing_metadata.get("feature_names", []),
-                mean=np.array(self._preprocessing_metadata.get("mean", [])),
-                std=np.array(self._preprocessing_metadata.get("std", [])),
-                normalization=self._preprocessing_metadata.get("normalization", "global"),
+                feature_names=meta.get("feature_names", []),
+                mean=np.array(mean, dtype=np.float32),
+                std=np.array(std, dtype=np.float32),
+                normalization=meta.get("normalization", "global"),
             )
 
         # Seal checkpoints to the server enclave identity
@@ -502,6 +507,8 @@ def build_strategy(
     early_stopping_min_delta: float = 1e-4,
     model_type: str = "mlp",
     preprocessing_metadata: Optional[Dict] = None,
+    global_mean: Optional[np.ndarray] = None,
+    global_std: Optional[np.ndarray] = None,
 ) -> "SaveModelStrategy":
     """
     Build the FL aggregation strategy.
@@ -512,7 +519,10 @@ def build_strategy(
     early_stopping_patience : stop if no improvement for N rounds (0 = off)
     early_stopping_metric   : "loss" | "accuracy" | "macro_f1"
     preprocessing_metadata  : dict with normalization stats to save alongside checkpoints
+    global_mean / global_std: coordinated stats broadcast to clients each round
     """
+    round_config = make_fl_round_config(local_epochs, global_mean, global_std)
+
     common_kwargs = dict(
         input_dim=input_dim,
         num_classes=num_classes,
@@ -528,7 +538,8 @@ def build_strategy(
         min_available_clients=min_clients,
         evaluate_metrics_aggregation_fn=weighted_average,
         fit_metrics_aggregation_fn=weighted_average,
-        on_fit_config_fn=lambda _: {"local_epochs": local_epochs},
+        on_fit_config_fn=lambda _: round_config,
+        on_evaluate_config_fn=lambda _: round_config,
         early_stopping_patience=early_stopping_patience,
         early_stopping_metric=early_stopping_metric,
         early_stopping_min_delta=early_stopping_min_delta,
@@ -591,6 +602,14 @@ def start_server(
     # Distribution monitoring — run before training starts
     csv_paths = get_default_client_csvs()
     existing_csvs = [p for p in csv_paths if os.path.exists(p)]
+    if not existing_csvs:
+        raise FileNotFoundError(
+            "No client CSVs found under data/processed/ (expected client1.csv, ...).\n"
+            "  Local:  python data/datascripts/pipeline.py\n"
+            "  Docker: mount ../data/processed:/app/data/processed:ro on fl-server "
+            "(see docker/docker-compose.yml)\n"
+            "  Image:  rebuild docker/Dockerfile.server (embeds client1–3.csv)"
+        )
     if monitor_distributions and existing_csvs:
         monitor_client_distributions(existing_csvs, save_dir=save_dir)
     
@@ -598,7 +617,6 @@ def start_server(
     global_mean, global_std = None, None
     if existing_csvs:
         global_mean, global_std = coordinate_global_normalization(existing_csvs)
-        print(f"[Server] Global normalization will be broadcast to all clients.")
     crypto_ctx = None
     if use_crypto and _CRYPTO_AVAILABLE:
         crypto_ctx = CryptoContext.load_or_create()
@@ -624,11 +642,19 @@ def start_server(
             "normalization": "global",
         }
         if existing_csvs:
-            from data_utils import load_csv_data  # noqa: E402
-            _, feature_names, _ = load_csv_data(
-                existing_csvs[0], target_col="label", use_dp=False, batch_size=1
-            )
+            _, feature_names = infer_csv_schema(existing_csvs[0])
             preprocessing_metadata["feature_names"] = feature_names
+            prep_path, norm_path = persist_run_preprocessing(
+                save_dir,
+                feature_names=feature_names,
+                mean=global_mean,
+                std=global_std,
+                normalization="global",
+            )
+            print(
+                f"[Server] Global normalization broadcast via FL config; "
+                f"saved {prep_path} and {norm_path}"
+            )
 
     strategy = build_strategy(
         strategy_name=strategy_name,
@@ -646,6 +672,8 @@ def start_server(
         early_stopping_metric=early_stopping_metric,
         model_type=model_type,
         preprocessing_metadata=preprocessing_metadata,
+        global_mean=global_mean,
+        global_std=global_std,
     )
     fl.server.start_server(
         server_address=server_address,

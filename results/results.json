@@ -2,16 +2,16 @@
   "rounds": [
     {
       "round": 1,
-      "loss": 1.58663,
-      "accuracy": 0.62445,
-      "macro_f1": 0.54676
+      "loss": 0.08551,
+      "accuracy": 0.96135,
+      "macro_f1": 0.96117
     },
     {
       "round": 2,
-      "loss": 1.00731,
-      "accuracy": 0.84134,
-      "macro_f1": 0.83112
+      "loss": 0.08029,
+      "accuracy": 0.96618,
+      "macro_f1": 0.96552
     }
   ],
-  "save_dir": "results/fl_rounds\\run_20260524_070957"
+  "save_dir": "results/fl_rounds\\run_20260524_123755"
 }

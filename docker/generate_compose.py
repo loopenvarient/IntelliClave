@@ -42,6 +42,7 @@ def generate(n_clients: int, out_path: str):
         "    volumes:",
         "      - server-results:/app/results",
         "      - ../crypto/certs/keys:/app/crypto/certs/keys",
+        "      - ../data/processed:/app/data/processed:ro",
         "    networks:",
         "      - fl-net",
         "    environment:",

@@ -79,6 +79,117 @@ def load_preprocessing_metadata(base_path: str) -> Optional[Dict]:
     return payload
 
 
+def get_global_normalization_path(save_dir: str) -> str:
+    """Path for server-written global mean/std broadcast to clients."""
+    return os.path.join(save_dir, "global_normalization.json")
+
+
+def save_global_normalization_file(
+    save_dir: str,
+    mean: np.ndarray,
+    std: np.ndarray,
+) -> str:
+    """Write coordinated global normalization stats for clients (e.g. shared volume)."""
+    os.makedirs(save_dir, exist_ok=True)
+    path = get_global_normalization_path(save_dir)
+    payload = {
+        "normalization": "global",
+        "mean": np.asarray(mean, dtype=np.float32).tolist(),
+        "std": np.asarray(std, dtype=np.float32).tolist(),
+    }
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2)
+    return path
+
+
+def load_global_normalization_file(path: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Load mean/std from global_normalization.json written by the FL server."""
+    with open(path) as f:
+        payload = json.load(f)
+    return (
+        np.array(payload["mean"], dtype=np.float32),
+        np.array(payload["std"], dtype=np.float32),
+    )
+
+
+def make_fl_round_config(
+    local_epochs: int,
+    global_mean: Optional[np.ndarray] = None,
+    global_std: Optional[np.ndarray] = None,
+) -> Dict:
+    """
+    Build the Flower fit/evaluate config dict broadcast from server to clients.
+
+    Flower Scalar config values must be bool | bytes | float | int | str only —
+    mean/std arrays are JSON-encoded strings (see global_norm_arrays_from_config).
+    """
+    cfg: Dict = {"local_epochs": int(local_epochs)}
+    if global_mean is not None and global_std is not None:
+        mean_list = np.asarray(global_mean, dtype=np.float32).tolist()
+        std_list = np.asarray(global_std, dtype=np.float32).tolist()
+        cfg["use_global_normalization"] = True
+        cfg["global_mean_json"] = json.dumps(mean_list)
+        cfg["global_std_json"] = json.dumps(std_list)
+    return cfg
+
+
+def _config_flag_enabled(config: Dict, key: str) -> bool:
+    value = config.get(key)
+    return value in (True, 1, "1", "true", "True")
+
+
+def _parse_norm_array(raw) -> Optional[np.ndarray]:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return np.array(json.loads(raw), dtype=np.float32)
+    if isinstance(raw, (list, tuple)):
+        return np.array(raw, dtype=np.float32)
+    return None
+
+
+def global_norm_arrays_from_config(config: Dict) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+    """Parse global mean/std from a Flower round config dict."""
+    if not _config_flag_enabled(config, "use_global_normalization"):
+        return None, None
+
+    mean = _parse_norm_array(
+        config.get("global_mean_json", config.get("global_mean"))
+    )
+    std = _parse_norm_array(
+        config.get("global_std_json", config.get("global_std"))
+    )
+    if mean is None or std is None:
+        return None, None
+    return mean, std
+
+
+def persist_run_preprocessing(
+    save_dir: str,
+    feature_names: List[str],
+    mean: np.ndarray,
+    std: np.ndarray,
+    normalization: str = "global",
+) -> Tuple[str, str]:
+    """
+    Write preprocessing.json and global_normalization.json into a run directory.
+
+    Call before FL starts so the dashboard can serve /predict even if training
+    stops before the first checkpoint is aggregated.
+    """
+    os.makedirs(save_dir, exist_ok=True)
+    checkpoint_stub = os.path.join(save_dir, "global_model_latest.pth")
+    preprocessing_path = save_preprocessing_metadata(
+        checkpoint_stub,
+        feature_names=feature_names,
+        mean=mean,
+        std=std,
+        normalization=normalization,
+    )
+    global_norm_path = save_global_normalization_file(save_dir, mean, std)
+    return preprocessing_path, global_norm_path
+
+
 @dataclass
 class DatasetMetadata:
     input_dim: int

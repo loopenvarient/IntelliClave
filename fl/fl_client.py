@@ -15,7 +15,12 @@ import torch.nn as nn
 import torch.optim as optim
 
 sys.path.insert(0, os.path.dirname(__file__))
-from data_utils import load_class_weights, load_csv_data, DatasetMetadata  # noqa: E402
+from data_utils import (  # noqa: E402
+    global_norm_arrays_from_config,
+    load_class_weights,
+    load_csv_data,
+    load_global_normalization_file,
+)
 from model import get_model  # noqa: E402
 from train_local import evaluate, train_one_epoch  # noqa: E402
 
@@ -52,10 +57,18 @@ class IntelliClaveClient(fl.client.NumPyClient):
         # ── Crypto: optional encryption of weights in transit ────────────────────
         use_crypto: bool = False,
         server_public_pem: bytes = None,
+        global_mean: Optional[np.ndarray] = None,
+        global_std: Optional[np.ndarray] = None,
         # ─────────────────────────────────────────────────────────────────────────
     ):
         self.cid = client_id
         self.local_epochs = local_epochs
+        self._learning_rate = learning_rate
+        self._csv_path = csv_path
+        self._batch_size = batch_size
+        self._drop_last_for_dp = use_dp
+        self._model_type = model_type
+        self._global_norm_applied = global_mean is not None and global_std is not None
         self.device = torch.device("cpu")
         self.num_fl_rounds = num_fl_rounds
 
@@ -70,39 +83,64 @@ class IntelliClaveClient(fl.client.NumPyClient):
             print(f"[Client {client_id}][Crypto] WARNING: crypto requested but unavailable "
                   "— running without encryption.")
 
-        # Data loading
-        self.train_loader, self.test_loader, self.metadata = load_csv_data(
-            csv_path,
-            batch_size=batch_size,
-            drop_last_for_dp=use_dp,
-        )
-        self.model = get_model(
-            self.metadata.input_dim,
-            self.metadata.num_classes,
-            model_type=model_type,
-        ).to(self.device)
-        class_weights = load_class_weights(
-            num_classes=self.metadata.num_classes, device=self.device
-        )
-        self.criterion = nn.CrossEntropyLoss(weight=class_weights)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
-
-        print(
-            f"[Client {client_id}] ready input_dim={self.metadata.input_dim} "
-            f"classes={self.metadata.num_classes} csv={csv_path}"
-        )
-
-        # DP setup — runs only if use_dp=True
+        # DP setup — attach PrivacyEngine only after final loaders are ready
         self.use_dp = use_dp
         self.privacy_engine = None
         self.target_epsilon = target_epsilon
         self.max_grad_norm = max_grad_norm
 
-        # Use actual train_size from metadata for accurate delta
+        self._init_model_and_data(
+            global_mean=global_mean,
+            global_std=global_std,
+        )
+
+        print(
+            f"[Client {client_id}] ready input_dim={self.metadata.input_dim} "
+            f"classes={self.metadata.num_classes} csv={csv_path}"
+            + (" (global normalization)" if self._global_norm_applied else "")
+        )
+
+    def _init_model_and_data(
+        self,
+        global_mean: Optional[np.ndarray] = None,
+        global_std: Optional[np.ndarray] = None,
+    ) -> None:
+        """Load data (with optional global scaling) and build model/optimizer."""
+        self.train_loader, self.test_loader, self.metadata = load_csv_data(
+            self._csv_path,
+            batch_size=self._batch_size,
+            drop_last_for_dp=self._drop_last_for_dp,
+            global_mean=global_mean,
+            global_std=global_std,
+        )
         self.target_delta = 1.0 / self.metadata.train_size
+
+        self.model = get_model(
+            self.metadata.input_dim,
+            self.metadata.num_classes,
+            model_type=self._model_type,
+        ).to(self.device)
+        class_weights = load_class_weights(
+            num_classes=self.metadata.num_classes, device=self.device
+        )
+        self.criterion = nn.CrossEntropyLoss(weight=class_weights)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=self._learning_rate)
 
         if self.use_dp:
             self._attach_privacy_engine()
+
+    def _ensure_global_normalization(self, config: Dict) -> None:
+        """Apply server-coordinated global mean/std from the FL round config."""
+        if self._global_norm_applied:
+            return
+        global_mean, global_std = global_norm_arrays_from_config(config)
+        if global_mean is None or global_std is None:
+            return
+
+        print(f"[Client {self.cid}] Applying server-coordinated global normalization")
+        self.privacy_engine = None
+        self._global_norm_applied = True
+        self._init_model_and_data(global_mean=global_mean, global_std=global_std)
 
     # Attaches Opacus PrivacyEngine to model, optimizer, and train_loader
     def _attach_privacy_engine(self):
@@ -169,8 +207,13 @@ class IntelliClaveClient(fl.client.NumPyClient):
         self.model.load_state_dict(state_dict, strict=True)
 
     def fit(self, parameters, config) -> Tuple[List[np.ndarray], int, Dict]:
-        self.set_parameters(parameters)
-        epochs = int(config.get("local_epochs", self.local_epochs))
+        try:
+            self._ensure_global_normalization(config)
+            self.set_parameters(parameters)
+            epochs = int(config.get("local_epochs", self.local_epochs))
+        except Exception as exc:
+            print(f"[Client {self.cid}][ERROR] fit() setup failed: {type(exc).__name__}: {exc}")
+            raise
 
         loss = 0.0
         for _ in range(epochs):
@@ -219,7 +262,12 @@ class IntelliClaveClient(fl.client.NumPyClient):
         )
 
     def evaluate(self, parameters, config) -> Tuple[float, int, Dict]:
-        self.set_parameters(parameters)
+        try:
+            self._ensure_global_normalization(config)
+            self.set_parameters(parameters)
+        except Exception as exc:
+            print(f"[Client {self.cid}][ERROR] evaluate() setup failed: {type(exc).__name__}: {exc}")
+            raise
         total_loss = 0.0
         n_examples = 0
 
@@ -247,6 +295,8 @@ def start_client(
     client_id: str,
     server_address: str = "127.0.0.1:8080",
     model_type: str = "mlp",
+    local_epochs: int = 3,
+    learning_rate: float = 1e-3,
     use_dp: bool = False,
     target_epsilon: float = 10.0,
     max_grad_norm: float = 1.0,
@@ -254,12 +304,21 @@ def start_client(
     batch_size: int = 32,
     use_crypto: bool = False,
     server_public_pem: bytes = None,
+    global_mean: Optional[np.ndarray] = None,
+    global_std: Optional[np.ndarray] = None,
+    norm_config_path: Optional[str] = None,
 ):
+    if norm_config_path and os.path.exists(norm_config_path):
+        global_mean, global_std = load_global_normalization_file(norm_config_path)
+        print(f"[Client {client_id}] Loaded global normalization from {norm_config_path}")
+
     fl.client.start_numpy_client(
         server_address=server_address,
         client=IntelliClaveClient(
             csv_path=csv_path,
             client_id=client_id,
+            local_epochs=local_epochs,
+            learning_rate=learning_rate,
             model_type=model_type,
             use_dp=use_dp,
             target_epsilon=target_epsilon,
@@ -268,6 +327,8 @@ def start_client(
             batch_size=batch_size,
             use_crypto=use_crypto,
             server_public_pem=server_public_pem,
+            global_mean=global_mean,
+            global_std=global_std,
         ),
     )
 
