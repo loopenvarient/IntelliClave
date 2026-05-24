@@ -28,6 +28,7 @@ from pydantic import BaseModel
 _here = os.path.dirname(os.path.abspath(__file__))
 ROOT  = os.path.abspath(os.path.join(_here, '..', '..'))
 sys.path.insert(0, os.path.join(ROOT, 'fl'))
+from data_utils import infer_default_preprocessing, load_preprocessing_metadata  # noqa: E402
 from model import get_model  # noqa: E402
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -158,6 +159,9 @@ def _get_model():
 
     if "model" not in _model_cache or current_mtime != cached_mtime:
         meta  = _load_model_meta(model_path)
+        preprocessing = load_preprocessing_metadata(model_path)
+        if preprocessing is None:
+            preprocessing = infer_default_preprocessing()
         model = get_model(
             input_dim=meta["input_dim"],
             num_classes=meta["num_classes"],
@@ -169,12 +173,23 @@ def _get_model():
         model.eval()
         _model_cache["model"] = model
         _model_cache["meta"]  = meta
+        _model_cache["preprocessing"] = preprocessing
+        if preprocessing is not None:
+            _model_cache["mean_tensor"] = torch.tensor(preprocessing["mean"], dtype=torch.float32)
+            _model_cache["std_tensor"] = torch.tensor(preprocessing["std"], dtype=torch.float32)
+        else:
+            _model_cache["mean_tensor"] = None
+            _model_cache["std_tensor"] = None
         _model_cache["mtime"] = current_mtime
         _model_cache["path"]  = model_path
         print(f"[Dashboard] Model loaded from {model_path} "
               f"(type={meta.get('model_type','mlp')})")
 
-    return _model_cache["model"], _model_cache["meta"]
+    return (
+        _model_cache["model"],
+        _model_cache["meta"],
+        _model_cache.get("preprocessing"),
+    )
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Request / response schemas ────────────────────────────────────────────────
@@ -247,7 +262,7 @@ def predict(payload: PredictRequest, request: Request):
     client_ip = request.client.host
     _check_rate_limit(client_ip)
 
-    model, meta  = _get_model()
+    model, meta, preprocessing = _get_model()
     expected_dim = meta["input_dim"]
     class_names  = meta["class_names"]
 
@@ -257,7 +272,28 @@ def predict(payload: PredictRequest, request: Request):
             detail=f"Expected {expected_dim} features, got {len(payload.features)}",
         )
 
-    x = torch.tensor(payload.features, dtype=torch.float32).unsqueeze(0)
+    if preprocessing is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Model preprocessing metadata is missing. Retrain the model so "
+                "the run produces preprocessing.json before serving predictions."
+            ),
+        )
+
+    mean = preprocessing["mean"]
+    std = preprocessing["std"]
+    if len(mean) != expected_dim or len(std) != expected_dim:
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid preprocessing metadata: feature dimensions do not match the model.",
+        )
+
+    x = torch.tensor(payload.features, dtype=torch.float32)
+    mean_tensor = _model_cache["mean_tensor"]
+    std_tensor = _model_cache["std_tensor"]
+    x = (x - mean_tensor) / std_tensor
+    x = x.unsqueeze(0)
     with torch.no_grad():
         logits = model(x)
         probs  = torch.softmax(logits, dim=1).squeeze()
@@ -329,11 +365,14 @@ def model_info():
     if not os.path.exists(model_path):
         raise HTTPException(status_code=503, detail="Model not trained yet.")
     meta = _load_model_meta(model_path)
+    preprocessing = load_preprocessing_metadata(model_path) or infer_default_preprocessing()
     return {
         "model_path":  model_path,
         "input_dim":   meta.get("input_dim"),
         "num_classes": meta.get("num_classes"),
         "class_names": meta.get("class_names"),
         "model_type":  meta.get("model_type", "mlp"),
+        "preprocessing_available": preprocessing is not None,
+        "preprocessing_mode": None if preprocessing is None else preprocessing.get("normalization"),
         "checkpoint_mtime": os.path.getmtime(model_path),
     }
