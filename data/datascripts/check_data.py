@@ -124,7 +124,7 @@ def run_checks(processed_dir: str, data_dir: str):
     print("\n[3] Class Weights")
     cw_path = os.path.join(data_dir, "class_weights.json")
     if os.path.exists(cw_path):
-        with open(cw_path) as f:
+        with open(cw_path, encoding="utf-8") as f:
             cw = json.load(f)
         # Filter out comment keys
         weight_entries = {k: v for k, v in cw.items() if not k.startswith("_")}

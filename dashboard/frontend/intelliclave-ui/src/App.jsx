@@ -57,16 +57,116 @@ const DUMMY_ATTESTATION = {
   environment: 'WSL2',
 }
 
+const DUMMY_ATTACKS = {
+  model_inversion: { verdict: 'RESISTANT', avg_cosine_similarity: 0.31 },
+  membership_inference: { verdict: 'NEAR RANDOM', auc: 0.503 },
+  gradient_poisoning: { verdict: 'MODERATE', accuracy_drop: 3.78 },
+}
+
+const NAV_ITEMS = [
+  { key: 'overview', icon: '◈', label: 'Overview', subtitle: 'Dashboard summary' },
+  { key: 'training', icon: '⬡', label: 'FL Training', subtitle: 'Round metrics' },
+  { key: 'privacy', icon: '⊕', label: 'Privacy', subtitle: 'DP budget' },
+  { key: 'clients', icon: '⬢', label: 'Clients', subtitle: 'Data partitions' },
+  { key: 'evaluation', icon: '⊞', label: 'Evaluation', subtitle: 'Attack results' },
+  { key: 'tee', icon: '⊟', label: 'TEE / Enclave', subtitle: 'Attestation & overhead' },
+]
+
+function toFiniteNumber(value) {
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) ? numberValue : null
+}
+
+function formatNumber(value, digits) {
+  const numberValue = toFiniteNumber(value)
+  return numberValue === null ? '—' : numberValue.toFixed(digits)
+}
+
+function normalizeClients(clients) {
+  if (Array.isArray(clients)) {
+    return clients
+  }
+
+  if (typeof clients === 'number' && Number.isFinite(clients)) {
+    return Array.from({ length: clients }, (_, index) => ({
+      id: `Client ${index + 1}`,
+      status: 'ready',
+      samples: 0,
+    }))
+  }
+
+  return []
+}
+
+function latestEpsilon(status, rounds, privacyLog) {
+  const fromStatus = toFiniteNumber(status?.epsilon)
+  if (fromStatus !== null) {
+    return fromStatus
+  }
+
+  const fromPrivacyLog = Array.isArray(privacyLog) && privacyLog.length > 0
+    ? toFiniteNumber(privacyLog[privacyLog.length - 1]?.epsilon)
+    : null
+  if (fromPrivacyLog !== null) {
+    return fromPrivacyLog
+  }
+
+  const fromRounds = Array.isArray(rounds) && rounds.length > 0
+    ? toFiniteNumber(rounds[rounds.length - 1]?.epsilon)
+    : null
+
+  return fromRounds
+}
+
+function normalizeStatus(payload, rounds, privacyLog) {
+  const normalizedClients = normalizeClients(payload?.clients)
+  const roundValue = toFiniteNumber(payload?.round) ?? 0
+  const totalRounds = toFiniteNumber(payload?.total_rounds) ?? (Array.isArray(rounds) ? rounds.length : 0)
+  const epsilon = latestEpsilon(payload, rounds, privacyLog)
+  const macroF1 = toFiniteNumber(payload?.macro_f1)
+  const accuracy = toFiniteNumber(payload?.accuracy)
+
+  return {
+    ...payload,
+    round: roundValue,
+    total_rounds: totalRounds,
+    clients: normalizedClients,
+    macro_f1: macroF1,
+    accuracy,
+    epsilon,
+    training_active: payload?.training_active ?? false,
+  }
+}
+
+function AttacksPanel({ attacks }) {
+  const modelInversion = attacks?.model_inversion ?? DUMMY_ATTACKS.model_inversion
+  const membershipInference = attacks?.membership_inference ?? DUMMY_ATTACKS.membership_inference
+  const gradientPoisoning = attacks?.gradient_poisoning ?? DUMMY_ATTACKS.gradient_poisoning
+
+  return (
+    <Panel title="Security Evaluation" tag="Attacks">
+      <table className="stat-table">
+        <tbody>
+          <tr>
+            <td>Model inversion</td>
+            <td>{modelInversion.verdict ?? '—'} · cosine {formatNumber(modelInversion.avg_cosine_similarity, 3)}</td>
+          </tr>
+          <tr>
+            <td>Membership inference</td>
+            <td>{membershipInference.verdict ?? '—'} · AUC {formatNumber(membershipInference.auc, 3)}</td>
+          </tr>
+          <tr>
+            <td>Gradient poisoning</td>
+            <td>{gradientPoisoning.verdict ?? '—'} · drop {formatNumber(gradientPoisoning.accuracy_drop, 2)}%</td>
+          </tr>
+        </tbody>
+      </table>
+    </Panel>
+  )
+}
+
 // ── Sidebar ───────────────────────────────────────────────────────────────────
-function Sidebar() {
-  const items = [
-    { icon: '◈', label: 'Overview',      active: true  },
-    { icon: '⬡', label: 'FL Training',   active: false },
-    { icon: '⊕', label: 'Privacy',       active: false },
-    { icon: '⬢', label: 'Clients',       active: false },
-    { icon: '⊞', label: 'Evaluation',    active: false },
-    { icon: '⊟', label: 'TEE / Enclave', active: false },
-  ]
+function Sidebar({ activePage, onChangePage }) {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
@@ -75,11 +175,19 @@ function Sidebar() {
       </div>
       <nav className="sidebar-nav">
         <div className="nav-section-label">Navigation</div>
-        {items.map(i => (
-          <div key={i.label} className={`nav-item ${i.active ? 'active' : ''}`}>
-            <span className="nav-icon">{i.icon}</span>
-            {i.label}
-          </div>
+        {NAV_ITEMS.map(item => (
+          <button
+            key={item.key}
+            type="button"
+            className={`nav-item ${activePage === item.key ? 'active' : ''}`}
+            onClick={() => onChangePage(item.key)}
+          >
+            <span className="nav-icon">{item.icon}</span>
+            <span className="nav-copy">
+              <span className="nav-label">{item.label}</span>
+              <span className="nav-subtitle">{item.subtitle}</span>
+            </span>
+          </button>
         ))}
       </nav>
       <div className="sidebar-footer">
@@ -92,6 +200,9 @@ function Sidebar() {
 
 // ── KPI Cards ─────────────────────────────────────────────────────────────────
 function KpiRow({ status }) {
+  const macroF1 = toFiniteNumber(status.macro_f1)
+  const accuracy = toFiniteNumber(status.accuracy)
+  const epsilon = toFiniteNumber(status.epsilon)
   return (
     <div className="kpi-row">
       <div className="kpi-card blue">
@@ -104,18 +215,20 @@ function KpiRow({ status }) {
       </div>
       <div className="kpi-card green">
         <div className="kpi-label">Macro F1</div>
-        <div className="kpi-value">{status.macro_f1.toFixed(3)}</div>
+        <div className="kpi-value">{formatNumber(macroF1, 3)}</div>
         <div className="kpi-sub">Global model</div>
       </div>
       <div className="kpi-card purple">
         <div className="kpi-label">Accuracy</div>
-        <div className="kpi-value">{(status.accuracy * 100).toFixed(1)}%</div>
+        <div className="kpi-value">{accuracy === null ? '—' : `${(accuracy * 100).toFixed(1)}%`}</div>
         <div className="kpi-sub">Test set</div>
       </div>
       <div className="kpi-card amber">
         <div className="kpi-label">Privacy Budget ε</div>
-        <div className="kpi-value">{status.epsilon.toFixed(3)}</div>
-        <div className="kpi-sub">{((status.epsilon / 10.0) * 100).toFixed(1)}% of ε=10 used</div>
+        <div className="kpi-value">{formatNumber(epsilon, 3)}</div>
+        <div className="kpi-sub">
+          {epsilon === null ? 'Privacy budget unavailable' : `${((epsilon / 10.0) * 100).toFixed(1)}% of ε=10 used`}
+        </div>
       </div>
     </div>
   )
@@ -159,13 +272,13 @@ function TrainingChart({ rounds }) {
 
 // ── Privacy budget ────────────────────────────────────────────────────────────
 function PrivacyPanel({ status, rounds }) {
-  const eps    = status.epsilon
+  const eps    = toFiniteNumber(status.epsilon)
   const target = 10.0
-  const pct    = Math.min((eps / target) * 100, 100)
+  const pct    = eps === null ? 0 : Math.min((eps / target) * 100, 100)
 
   // Colour logic: green < 70%, amber 70–90%, red > 90%
   // At ε=9.992 (training complete) we show green — budget was correctly consumed
-  const isComplete = status.training_active === false && eps >= target * 0.95
+  const isComplete = status.training_active === false && eps !== null && eps >= target * 0.95
   const color = isComplete
     ? 'var(--green)'
     : pct < 70 ? 'var(--green)' : pct < 90 ? 'var(--amber)' : 'var(--red)'
@@ -176,7 +289,7 @@ function PrivacyPanel({ status, rounds }) {
   return (
     <Panel title="Privacy Budget" tag="DP-SGD">
       <div className="epsilon-big">
-        <div className="value" style={{ color }}>ε = {eps.toFixed(4)}</div>
+        <div className="value" style={{ color }}>ε = {formatNumber(eps, 4)}</div>
         <div className="label">
           δ = 1/n_train · Target ε ≤ {target}
           {isComplete && <span className="budget-note"> · Training complete ✓</span>}
@@ -197,7 +310,7 @@ function PrivacyPanel({ status, rounds }) {
           <YAxis domain={[0, yMax]} tick={{ fontSize: 10 }} />
           <Tooltip
             contentStyle={{ background: '#1c2030', border: '1px solid #252a3a', borderRadius: 8 }}
-            formatter={(v) => [v.toFixed(3), 'ε consumed']}
+            formatter={(v) => [formatNumber(v, 3), 'ε consumed']}
           />
           <ReferenceLine
             y={target}
@@ -223,14 +336,15 @@ function PrivacyPanel({ status, rounds }) {
 
 // ── Client status ─────────────────────────────────────────────────────────────
 function ClientPanel({ status }) {
+  const clients = normalizeClients(status.clients)
   return (
-    <Panel title="FL Clients" tag={`${status.clients.length} nodes`}>
+    <Panel title="FL Clients" tag={`${clients.length} nodes`}>
       <div className="client-cards">
-        {status.clients.map(c => (
+        {clients.map(c => (
           <div key={c.id} className={`client-card ${c.status}`}>
             <div className="client-info">
               <div className="name">{c.id}</div>
-              <div className="samples">{c.samples.toLocaleString()} samples</div>
+              <div className="samples">{Number.isFinite(Number(c.samples)) ? Number(c.samples).toLocaleString() : '0'} samples</div>
             </div>
             <span className={`client-pill ${c.status}`}>
               {c.status === 'ready' ? '● Ready' : '● Offline'}
@@ -239,6 +353,17 @@ function ClientPanel({ status }) {
         ))}
       </div>
     </Panel>
+  )
+}
+
+function SectionHeader({ title, description }) {
+  return (
+    <div className="section-header">
+      <div>
+        <h2>{title}</h2>
+        {description && <p>{description}</p>}
+      </div>
+    </div>
   )
 }
 
@@ -360,33 +485,47 @@ export default function App() {
   const [perClass,    setPerClass]    = useState(DUMMY_PER_CLASS)
   const [teeData,     setTeeData]     = useState(DUMMY_TEE)
   const [attestation, setAttestation] = useState(DUMMY_ATTESTATION)
+  const [privacyLog,  setPrivacyLog]  = useState([])
+  const [attacks,     setAttacks]     = useState(DUMMY_ATTACKS)
+  const [activePage,  setActivePage]  = useState('overview')
   const [lastPoll,    setLastPoll]    = useState(null)
   const [backendUp,   setBackendUp]   = useState(false)
 
   useEffect(() => {
     const poll = async () => {
       try {
-        const [s, r, b, a] = await Promise.all([
+        const [s, r, b, a, p, atk] = await Promise.allSettled([
           axios.get(`${API}/status`),
           axios.get(`${API}/results`),
           axios.get(`${API}/benchmarks`),
           axios.get(`${API}/attestation`),
+          axios.get(`${API}/privacy_log`),
+          axios.get(`${API}/attacks`),
         ])
 
-        setStatus(s.data)
-        setRounds(r.data.rounds ?? DUMMY_ROUNDS)
-        setAttestation(a.data)
-        setBackendUp(true)
+        const statusData = s.status === 'fulfilled' ? s.value.data : DUMMY_STATUS
+        const roundsData = r.status === 'fulfilled' ? (r.value.data.rounds ?? DUMMY_ROUNDS) : DUMMY_ROUNDS
+        const benchmarksData = b.status === 'fulfilled' ? b.value.data : null
+        const attestationData = a.status === 'fulfilled' ? a.value.data : DUMMY_ATTESTATION
+        const privacyLogData = p.status === 'fulfilled' ? p.value.data : []
+        const attacksData = atk.status === 'fulfilled' ? atk.value.data : DUMMY_ATTACKS
+
+        setPrivacyLog(Array.isArray(privacyLogData) ? privacyLogData : [])
+        setAttacks(attacksData ?? DUMMY_ATTACKS)
+        setStatus(normalizeStatus(statusData, roundsData, privacyLogData))
+        setRounds(roundsData)
+        setAttestation(attestationData)
+        setBackendUp(s.status === 'fulfilled')
 
         // Per-class F1 — convert object → array for Recharts
-        if (r.data.per_class_f1) {
+        if (r.status === 'fulfilled' && r.value.data.per_class_f1) {
           const SHORT = {
             WALKING: 'WALKING', WALKING_UPSTAIRS: 'WALK_UP',
             WALKING_DOWNSTAIRS: 'WALK_DN', SITTING: 'SITTING',
             STANDING: 'STANDING', LAYING: 'LAYING',
           }
           setPerClass(
-            Object.entries(r.data.per_class_f1).map(([k, v]) => ({
+            Object.entries(r.value.data.per_class_f1).map(([k, v]) => ({
               name: SHORT[k] ?? k,
               f1: Math.round(v * 1000) / 1000,
             }))
@@ -394,7 +533,7 @@ export default function App() {
         }
 
         // TEE overhead — convert array → {op, base, tee} for Recharts
-        if (b.data.tee_overhead_ms) {
+        if (benchmarksData && benchmarksData.tee_overhead_ms) {
           const OP_SHORT = {
             model_inference: 'inference', training_step: 'train',
             encrypt_gradients: 'encrypt', aes_encrypt: 'encrypt',
@@ -403,7 +542,7 @@ export default function App() {
             backward_pass: 'backward', model_save: 'save',
           }
           setTeeData(
-            b.data.tee_overhead_ms.map(row => ({
+            benchmarksData.tee_overhead_ms.map(row => ({
               op:   OP_SHORT[row.operation] ?? row.operation,
               base: row.baseline_ms,
               tee:  row.tee_ms,
@@ -427,13 +566,95 @@ export default function App() {
   const teeBorderColor = attVerified ? 'rgba(62,207,142,0.3)' : 'rgba(224,82,82,0.3)'
   const teeTextColor = attVerified ? 'var(--green)' : 'var(--red)'
   const teeBadgeText = attVerified ? '⬡ TEE VERIFIED' : '⬡ TEE UNVERIFIED'
+  const activeNav = NAV_ITEMS.find(item => item.key === activePage) ?? NAV_ITEMS[0]
+
+  const pageContent = (() => {
+    switch (activePage) {
+      case 'training':
+        return (
+          <>
+            <SectionHeader title="FL Training" description="Track convergence and model quality across federated rounds." />
+            <KpiRow status={status} />
+            <div className="grid-2">
+              <TrainingChart rounds={rounds} />
+              <SystemPanel status={status} />
+            </div>
+          </>
+        )
+      case 'privacy':
+        return (
+          <>
+            <SectionHeader title="Privacy" description="Inspect the consumed privacy budget and how it changes over rounds." />
+            <KpiRow status={status} />
+            <div className="grid-2">
+              <PrivacyPanel status={status} rounds={rounds} />
+              <AttacksPanel attacks={attacks} />
+            </div>
+          </>
+        )
+      case 'clients':
+        return (
+          <>
+            <SectionHeader title="Clients" description="View client participation and class balance for the current run." />
+            <KpiRow status={status} />
+            <div className="grid-2">
+              <ClientPanel status={status} />
+              <PerClassPanel perClass={perClass} />
+            </div>
+          </>
+        )
+      case 'evaluation':
+        return (
+          <>
+            <SectionHeader title="Evaluation" description="Review class-wise quality and attack resistance." />
+            <KpiRow status={status} />
+            <div className="grid-2">
+              <PerClassPanel perClass={perClass} />
+              <AttacksPanel attacks={attacks} />
+            </div>
+          </>
+        )
+      case 'tee':
+        return (
+          <>
+            <SectionHeader title="TEE / Enclave" description="Monitor attestation state and the cost of enclave execution." />
+            <KpiRow status={status} />
+            <div className="grid-2">
+              <TeePanel teeData={teeData} />
+              <AttestationPanel attestation={attestation} />
+            </div>
+          </>
+        )
+      case 'overview':
+      default:
+        return (
+          <>
+            <SectionHeader title="Overview" description="A classic control room view for the full IntelliClave stack." />
+            <KpiRow status={status} />
+            <div className="grid-2">
+              <TrainingChart rounds={rounds} />
+              <PrivacyPanel status={status} rounds={rounds} />
+            </div>
+            <div className="grid-3">
+              <ClientPanel status={status} />
+              <PerClassPanel perClass={perClass} />
+              <TeePanel teeData={teeData} />
+            </div>
+            <div className="grid-2" style={{ marginBottom: 0 }}>
+              <AttestationPanel attestation={attestation} />
+              <SystemPanel status={status} />
+            </div>
+          </>
+        )
+    }
+  })()
 
   return (
     <div className="layout">
-      <Sidebar />
+      <Sidebar activePage={activePage} onChangePage={setActivePage} />
       <div className="main">
         <div className="topbar">
-          <span className="topbar-title">Overview</span>
+          <span className="topbar-title">{activeNav.label}</span>
           <div className="topbar-right">
             {/* TEE badge — wired to /attestation API */}
             <div
@@ -451,20 +672,7 @@ export default function App() {
           </div>
         </div>
         <div className="content">
-          <KpiRow status={status} />
-          <div className="grid-2">
-            <TrainingChart rounds={rounds} />
-            <PrivacyPanel  status={status} rounds={rounds} />
-          </div>
-          <div className="grid-3">
-            <ClientPanel   status={status} />
-            <PerClassPanel perClass={perClass} />
-            <TeePanel      teeData={teeData} />
-          </div>
-          <div className="grid-2" style={{ marginBottom: 0 }}>
-            <AttestationPanel attestation={attestation} />
-            <SystemPanel      status={status} />
-          </div>
+          {pageContent}
         </div>
       </div>
     </div>

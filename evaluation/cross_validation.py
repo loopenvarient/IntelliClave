@@ -289,7 +289,7 @@ def main(csv_paths: list, n_folds: int = 5, epochs: int = 10):
     # ── save ──────────────────────────────────────────────────────────────────
     out_path = os.path.join(_ROOT, "results", "cross_validation.json")
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, "w") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(all_results, f, indent=2)
     print(f"\n✅ Results saved → {out_path}")
 

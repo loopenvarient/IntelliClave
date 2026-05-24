@@ -39,7 +39,7 @@ def main(max_epsilon: float = DEFAULT_EPSILON,
 
     monitor = BudgetMonitor(max_epsilon=max_epsilon)
 
-    with open(privacy_json) as f:
+    with open(privacy_json, encoding="utf-8") as f:
         privacy_data = json.load(f)
 
     for round_entry in privacy_data:
@@ -56,7 +56,7 @@ def main(max_epsilon: float = DEFAULT_EPSILON,
     monitor.save(out)
     print(f"Budget monitor saved to {out}")
 
-    with open(out) as f:
+    with open(out, encoding="utf-8") as f:
         log = json.load(f)
 
     print()

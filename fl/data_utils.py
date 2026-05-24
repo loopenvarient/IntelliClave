@@ -60,7 +60,7 @@ def save_preprocessing_metadata(
         "mean": np.asarray(mean, dtype=np.float32).tolist(),
         "std": np.asarray(std, dtype=np.float32).tolist(),
     }
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
     return path
 
@@ -72,7 +72,7 @@ def load_preprocessing_metadata(base_path: str) -> Optional[Dict]:
     path = get_preprocessing_metadata_path(base_path)
     if not os.path.exists(path):
         return None
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         payload = json.load(f)
     payload["mean"] = np.array(payload["mean"], dtype=np.float32)
     payload["std"] = np.array(payload["std"], dtype=np.float32)
@@ -97,14 +97,14 @@ def save_global_normalization_file(
         "mean": np.asarray(mean, dtype=np.float32).tolist(),
         "std": np.asarray(std, dtype=np.float32).tolist(),
     }
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
     return path
 
 
 def load_global_normalization_file(path: str) -> Tuple[np.ndarray, np.ndarray]:
     """Load mean/std from global_normalization.json written by the FL server."""
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         payload = json.load(f)
     return (
         np.array(payload["mean"], dtype=np.float32),
@@ -430,7 +430,7 @@ def load_class_weights(
     if not os.path.exists(weights_path):
         return None
 
-    with open(weights_path) as f:
+    with open(weights_path, encoding="utf-8") as f:
         weights_dict: Dict = json.load(f)
 
     keys = [k for k in weights_dict.keys() if not k.startswith("_")]

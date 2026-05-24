@@ -53,7 +53,7 @@ def evaluate_checkpoint(
     meta_path = os.path.join(os.path.dirname(checkpoint_path), "model_meta.json")
     saved_model_type = model_type  # use caller's value as default
     if os.path.exists(meta_path):
-        with open(meta_path) as f:
+        with open(meta_path, encoding="utf-8") as f:
             saved_meta = json.load(f)
         saved_model_type = saved_meta.get("model_type", model_type)
         if saved_model_type != model_type:
@@ -166,7 +166,7 @@ if __name__ == "__main__":
     )
 
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
-    with open(args.output, "w") as f:
+    with open(args.output, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
     print(f"Checkpoint: {summary['checkpoint']}")

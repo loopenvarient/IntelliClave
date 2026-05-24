@@ -63,7 +63,7 @@ TEST_SPLIT  = 0.3
 
 def load_meta():
     if os.path.exists(META_PATH):
-        with open(META_PATH) as f:
+        with open(META_PATH, encoding="utf-8") as f:
             return json.load(f)
     if not CLIENT_CSVS:
         raise FileNotFoundError("No model_meta.json and no CSVs in data/processed/")
@@ -224,7 +224,7 @@ def main(out_path: str = OUT_PATH, dp_mode: bool = False,
         "summary": summary,
     }
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, "w") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2)
 
     print(f"\n{'='*55}")

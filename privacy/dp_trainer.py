@@ -51,7 +51,7 @@ class DPTrainer:
         path  = os.path.join(_root, "data", "class_weights.json")
         if not os.path.exists(path) or num_classes is None:
             return None
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             d = json.load(f)
         # Filter comment keys
         d = {k: v for k, v in d.items() if not k.startswith("_")}

@@ -36,7 +36,7 @@ app = FastAPI(title="IntelliClave Dashboard API", version="1.0.0")
 
 # ── CORS — configurable via environment variable ──────────────────────────────
 # Set CORS_ORIGINS="https://app.example.com,https://admin.example.com" in prod.
-_cors_env = os.environ.get("CORS_ORIGINS", "http://localhost:3000")
+_cors_env = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173")
 _cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
 
 app.add_middleware(
@@ -125,7 +125,7 @@ def _load_model_meta(model_path: str) -> dict:
     """Load model_meta.json. Falls back to inferring from processed CSVs."""
     meta_path = _find_meta_path(model_path)
     if os.path.exists(meta_path):
-        with open(meta_path) as f:
+        with open(meta_path, encoding="utf-8") as f:
             return json.load(f)
 
     # Fallback: infer from first processed CSV
@@ -220,7 +220,7 @@ def _read_json(rel_path: str) -> dict:
     path = os.path.join(ROOT, rel_path)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail=f"{rel_path} not found")
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -235,7 +235,45 @@ def status():
     Return the latest training run summary.
     Written by run_fl_simulation.py / fl_server.py after training completes.
     """
-    return _read_json("status.json")
+    # Load raw status.json then normalize for frontend expectations.
+    status_obj = _read_json("status.json")
+
+    # Normalize `clients`: if a simple integer is present, convert to an array
+    # of placeholder client descriptors so the frontend can iterate safely.
+    clients = status_obj.get("clients")
+    if isinstance(clients, int):
+        status_obj["clients"] = [{"client_id": i + 1} for i in range(clients)]
+
+    # If epsilon is missing, attempt to extract it from the privacy log
+    if "epsilon" not in status_obj:
+        try:
+            ppath = _find_privacy_log_path()
+            if os.path.exists(ppath):
+                with open(ppath, encoding="utf-8") as pf:
+                    pl = json.load(pf)
+                # Heuristic: look for common epsilon keys in privacy log
+                def _find_eps(obj):
+                    if isinstance(obj, dict):
+                        for k in ("epsilon", "actual_epsilon", "cumulative_epsilon", "spent_epsilon", "final_epsilon", "total_epsilon"):
+                            if k in obj and isinstance(obj[k], (int, float)):
+                                return float(obj[k])
+                        # try nested
+                        for v in obj.values():
+                            res = _find_eps(v)
+                            if res is not None:
+                                return res
+                    if isinstance(obj, list) and obj:
+                        return _find_eps(obj[-1])
+                    return None
+
+                found = _find_eps(pl)
+                if found is not None:
+                    status_obj["epsilon"] = found
+        except Exception:
+            # Do not fail the status endpoint for parsing heuristics.
+            pass
+
+    return status_obj
 
 
 @app.get("/results")
@@ -336,7 +374,7 @@ def attacks():
     for key, rel_path in attack_files.items():
         path = os.path.join(ROOT, rel_path)
         if os.path.exists(path):
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             out[key] = data.get("summary", {})
         else:
@@ -348,19 +386,64 @@ def attacks():
 def privacy_log():
     path = _find_privacy_log_path()
     if os.path.exists(path):
-        with open(path) as f:
-            return json.load(f)
+        with open(path, encoding="utf-8") as f:
+            pl = json.load(f)
+        # Normalize entries to include top-level `epsilon` for frontend/tests
+        if isinstance(pl, list):
+            out = []
+            for entry in pl:
+                if isinstance(entry, dict):
+                    if "epsilon" not in entry:
+                        if "avg_epsilon" in entry:
+                            entry["epsilon"] = entry.get("avg_epsilon")
+                        else:
+                            clients = entry.get("clients")
+                            if isinstance(clients, list) and clients:
+                                first = clients[0]
+                                if isinstance(first, dict) and "epsilon" in first:
+                                    entry["epsilon"] = first.get("epsilon")
+                out.append(entry)
+            return out
+        return pl
 
     # Backward-compatible fallback for older demo artifacts.
     legacy_path = os.path.join(ROOT, "results", "privacy_log.json")
     if os.path.exists(legacy_path):
-        with open(legacy_path) as f:
-            return json.load(f)
+        with open(legacy_path, encoding="utf-8") as f:
+            pl = json.load(f)
+        # Normalize legacy privacy_log (list of dicts) as above
+        if isinstance(pl, list):
+            out = []
+            for entry in pl:
+                if isinstance(entry, dict) and "epsilon" not in entry:
+                    if "avg_epsilon" in entry:
+                        entry["epsilon"] = entry.get("avg_epsilon")
+                out.append(entry)
+            return out
+        return pl
 
-    raise HTTPException(
-        status_code=404,
-        detail="Privacy log not found for the active run.",
-    )
+    # Additional fallback: if an epsilon-over-rounds result exists, synthesize
+    # a privacy log from it so the dashboard and tests have per-round epsilon
+    # telemetry to display.
+    eps_rounds = os.path.join(ROOT, "results", "epsilon_rounds.json")
+    if os.path.exists(eps_rounds):
+        try:
+            with open(eps_rounds, encoding="utf-8") as f:
+                rounds = json.load(f)
+            out = []
+            for r in rounds:
+                eps = r.get("epsilon_consumed") or r.get("epsilon") or r.get("actual_epsilon")
+                round_num = r.get("fl_round") or r.get("round")
+                entry = {"round": round_num, "epsilon": eps}
+                out.append(entry)
+            if out:
+                return out
+        except Exception:
+            pass
+
+    # Final fallback: return an empty list rather than 404 so the UI can
+    # gracefully show "no privacy log available" instead of an error.
+    return []
 
 
 @app.get("/query_stats")

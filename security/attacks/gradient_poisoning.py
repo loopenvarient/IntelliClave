@@ -75,7 +75,7 @@ POISON_RATES  = [0.0, 0.1, 0.3, 0.5, 1.0]
 
 def _load_meta():
     if os.path.exists(META_PATH):
-        with open(META_PATH) as f:
+        with open(META_PATH, encoding="utf-8") as f:
             return _json.load(f)
     if not CLIENT_CSVS:
         raise FileNotFoundError("No model_meta.json and no CSVs in data/processed/")
@@ -364,7 +364,7 @@ def main(
     }
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, "w") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2)
 
     print(f"\n{'='*55}")

@@ -74,7 +74,7 @@ def evaluate(
 
 def save_results(results_dict: Dict, path: str) -> None:
     """Save results dict to a JSON file."""
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(results_dict, f, indent=2)
 
 

@@ -193,7 +193,7 @@ def run_experiment1(
             })
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, "w") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     print(f"\n✅ Saved → {out_path}")
     return results
@@ -262,7 +262,7 @@ def run_experiment2(
         print(f"  ❌ Experiment 2 failed: {e}")
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, "w") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(rounds_data, f, indent=2)
     print(f"\n✅ Saved → {out_path}")
     return rounds_data

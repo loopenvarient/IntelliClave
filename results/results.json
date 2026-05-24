@@ -2,16 +2,34 @@
   "rounds": [
     {
       "round": 1,
-      "loss": 0.08551,
-      "accuracy": 0.96135,
-      "macro_f1": 0.96117
+      "loss": 1.67205,
+      "accuracy": 0.51722,
+      "macro_f1": 0.41491
     },
     {
       "round": 2,
-      "loss": 0.08029,
-      "accuracy": 0.96618,
-      "macro_f1": 0.96552
+      "loss": 1.40029,
+      "accuracy": 0.69384,
+      "macro_f1": 0.6286
+    },
+    {
+      "round": 3,
+      "loss": 0.98099,
+      "accuracy": 0.79767,
+      "macro_f1": 0.77651
+    },
+    {
+      "round": 4,
+      "loss": 0.64116,
+      "accuracy": 0.84328,
+      "macro_f1": 0.83454
+    },
+    {
+      "round": 5,
+      "loss": 0.42509,
+      "accuracy": 0.88549,
+      "macro_f1": 0.88279
     }
   ],
-  "save_dir": "results/fl_rounds\\run_20260524_123755"
+  "save_dir": "results\\fl_rounds"
 }

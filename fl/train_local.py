@@ -177,7 +177,7 @@ def train_local(
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         torch.save(model.state_dict(), save_path)
         history_path = save_path.replace(".pth", "_history.json")
-        with open(history_path, "w") as f:
+        with open(history_path, "w", encoding="utf-8") as f:
             json.dump(history, f, indent=2)
         
         # Save preprocessing stats from the same train split used by load_csv_data()

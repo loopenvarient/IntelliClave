@@ -1,11 +1,11 @@
 {
-  "round": 2,
-  "total_rounds": 2,
-  "clients": 1,
-  "loss": 0.08029,
-  "accuracy": 0.96618,
-  "macro_f1": 0.96552,
-  "save_dir": "results/fl_rounds\\run_20260524_123755",
+  "round": 5,
+  "total_rounds": 5,
+  "clients": 3,
+  "loss": 0.42509,
+  "accuracy": 0.88549,
+  "macro_f1": 0.88279,
+  "save_dir": "results\\fl_rounds",
   "model_type": "mlp",
   "early_stopped": false
 }

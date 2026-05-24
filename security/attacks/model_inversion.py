@@ -48,7 +48,7 @@ DEFAULT_STEPS = 500
 def load_meta(label_col: str = LABEL_COL):
     """Load model metadata (input_dim, num_classes, class_names)."""
     if os.path.exists(META_PATH):
-        with open(META_PATH) as f:
+        with open(META_PATH, encoding="utf-8") as f:
             return json.load(f)
     # Fallback: infer from first CSV
     csvs = sorted(f for f in os.listdir(PROCESSED_DIR) if f.endswith(".csv"))
@@ -200,7 +200,7 @@ def main(model_path: str = MODEL_PATH, label_col: str = LABEL_COL,
         output = {"attack": "model_inversion", "mode": mode,
                   "results": results, "summary": summary}
         os.makedirs(os.path.dirname(out), exist_ok=True)
-        with open(out, "w") as f:
+        with open(out, "w", encoding="utf-8") as f:
             json.dump(output, f, indent=2)
 
         print(f"\n  Avg cosine similarity : {avg_cos:.4f}")

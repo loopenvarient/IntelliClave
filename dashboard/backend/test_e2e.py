@@ -152,7 +152,7 @@ import json as _json
 import pandas as _pd_module
 _meta_path = os.path.join(_ROOT, "results", "fl_rounds", "model_meta.json")
 if os.path.exists(_meta_path):
-    with open(_meta_path) as _f:
+    with open(_meta_path, encoding="utf-8") as _f:
         _meta = _json.load(_f)
     _expected_dim = _meta["input_dim"]
     _valid_labels = set(_meta.get("class_names", []))

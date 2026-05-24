@@ -62,12 +62,12 @@ def compute_weights(processed_dir: str, label_col: str, out_path: str):
         print(f"  class_{idx:<4} {w:.6f}")
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    with open(out_path, "w") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(weights_dict, f, indent=2)
     print(f"\nSaved -> {out_path}")
 
     # Verify reload
-    with open(out_path) as f:
+    with open(out_path, encoding="utf-8") as f:
         loaded = json.load(f)
     assert len(loaded) == n_classes
     print("Reload verified ✓")

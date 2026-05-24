@@ -222,7 +222,7 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
             }
             self.privacy_log.append(privacy_entry)
             privacy_path = os.path.join(self.save_dir, "fl_privacy.json")
-            with open(privacy_path, "w") as f:
+            with open(privacy_path, "w", encoding="utf-8") as f:
                 json.dump(self.privacy_log, f, indent=2)
             print(
                 f"[Server][DP] Round {server_round} "
@@ -241,7 +241,7 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
             entry.update({key: round(float(value), 5) for key, value in metrics.items()})
         self.round_log.append(entry)
 
-        with open(os.path.join(self.save_dir, "fl_metrics.json"), "w") as f:
+        with open(os.path.join(self.save_dir, "fl_metrics.json"), "w", encoding="utf-8") as f:
             json.dump(self.round_log, f, indent=2)
 
         print(f"[Server] Round {server_round} {entry}")
@@ -299,7 +299,7 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
             "class_names": self.class_names,
             "model_type":  model_type,
         }
-        with open(meta_path, "w") as f:
+        with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, indent=2)
 
         # Save preprocessing metadata (normalization stats) alongside checkpoint
@@ -457,7 +457,7 @@ def monitor_client_distributions(
 
     if save_dir:
         out = os.path.join(save_dir, "distribution_report.json")
-        with open(out, "w") as f:
+        with open(out, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2)
         print(f"[Server] Distribution report saved -> {out}")
 
@@ -707,14 +707,32 @@ def _write_run_summary(save_dir: str, strategy: "SaveModelStrategy") -> None:
         "early_stopped": strategy._es_triggered,
     }
     status_path = os.path.join(_root, "status.json")
-    with open(status_path, "w") as f:
+    with open(status_path, "w", encoding="utf-8") as f:
+        # Add final epsilon summary if privacy log exists
+        try:
+            pl = getattr(strategy, "privacy_log", None)
+            if isinstance(pl, list) and pl:
+                # Take the last recorded avg_epsilon if available
+                last_pl = pl[-1]
+                eps = last_pl.get("avg_epsilon") or last_pl.get("epsilon")
+                if eps is not None:
+                    status["epsilon"] = float(eps)
+                else:
+                    # fall back: average per-client eps in last entry
+                    clients = last_pl.get("clients") or []
+                    if isinstance(clients, list) and clients:
+                        vals = [c.get("epsilon") for c in clients if isinstance(c, dict) and c.get("epsilon") is not None]
+                        if vals:
+                            status["epsilon"] = float(sum(vals) / len(vals))
+        except Exception:
+            pass
         json.dump(status, f, indent=2)
 
     # results/results.json — full round history for the dashboard chart
     results_dir = os.path.join(_root, "results")
     os.makedirs(results_dir, exist_ok=True)
     results_path = os.path.join(results_dir, "results.json")
-    with open(results_path, "w") as f:
+    with open(results_path, "w", encoding="utf-8") as f:
         json.dump({"rounds": round_log, "save_dir": save_dir}, f, indent=2)
 
     print(f"[Server] status.json      -> {status_path}")
