@@ -2,7 +2,10 @@ import argparse
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(__file__))
+_HERE = os.path.dirname(__file__)
+_ROOT = os.path.abspath(os.path.join(_HERE, ".."))
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, _HERE)
 from data_utils import get_default_client_csvs  # noqa: E402
 from fl_client import start_client  # noqa: E402
 
@@ -34,14 +37,14 @@ if __name__ == "__main__":
                         help="Model architecture (default: mlp).")
     parser.add_argument("--lr", type=float, default=1e-3,
                         help="Learning rate (default: 1e-3).")
-    parser.add_argument("--local-epochs", type=int, default=3,
-                        help="Local training epochs per FL round (default: 3).")
+    parser.add_argument("--local-epochs", type=int, default=1,
+                        help="Local training epochs per FL round (default: 1).")
     parser.add_argument("--batch-size", type=int, default=32,
                         help="DataLoader batch size (default: 32).")
     parser.add_argument("--dp", action="store_true",
                         help="Enable Differential Privacy via Opacus.")
-    parser.add_argument("--epsilon", type=float, default=10.0,
-                        help="DP target epsilon. Default=10.0.")
+    parser.add_argument("--epsilon", type=float, default=1.5,
+                        help="DP target epsilon. Default=1.5.")
     parser.add_argument("--rounds", type=int, default=10,
                         help="Total FL rounds — must match server --rounds.")
     parser.add_argument("--attest", action="store_true",
@@ -62,7 +65,7 @@ if __name__ == "__main__":
                 att.verify()
             except (FileNotFoundError, SecurityError) as e:
                 print(f"[run_client] ATTESTATION FAILED: {e}")
-                raise SystemExit(1)
+                raise SystemExit(1) from e
         else:
             print("[run_client] WARNING: attestation module not found — skipping.")
 
@@ -76,7 +79,7 @@ if __name__ == "__main__":
         csv_path = default_csvs[client_index]
 
     # Load public key if crypto requested
-    server_public_pem = None
+    server_public_key_pem = None
     if args.crypto:
         pubkey_path = args.pubkey or os.path.join(
             os.path.dirname(__file__), "..", "crypto", "certs", "keys", "server_public.pem"
@@ -87,7 +90,7 @@ if __name__ == "__main__":
             print("         Start the server with --crypto first to generate the keypair.")
             raise SystemExit(1)
         with open(pubkey_path, "rb") as f:
-            server_public_pem = f.read()
+            server_public_key_pem = f.read()
 
     start_client(
         csv_path=csv_path,
@@ -98,7 +101,7 @@ if __name__ == "__main__":
         learning_rate=args.lr,
         batch_size=args.batch_size,
         use_crypto=args.crypto,
-        server_public_pem=server_public_pem,
+        server_public_key_pem=server_public_key_pem,
         use_dp=args.dp,
         target_epsilon=args.epsilon,
         num_fl_rounds=args.rounds,

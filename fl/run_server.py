@@ -5,9 +5,6 @@ import sys
 sys.path.insert(0, os.path.dirname(__file__))
 from fl_server import (  # noqa: E402
     infer_default_input_dim,
-    infer_default_num_classes,
-    make_timestamped_save_dir,
-    monitor_client_distributions,
     start_server,
 )
 
@@ -29,7 +26,7 @@ if __name__ == "__main__":
                         help="Number of output classes. Inferred from data if not set.")
     parser.add_argument("--rounds", type=int, default=10)
     parser.add_argument("--min-clients", type=int, default=3)
-    parser.add_argument("--local-epochs", type=int, default=3)
+    parser.add_argument("--local-epochs", type=int, default=1)
     parser.add_argument("--address", default="0.0.0.0:8080")
     parser.add_argument("--save-dir", default="",
                         help="Output directory. Auto-generates a timestamped path if not set.")

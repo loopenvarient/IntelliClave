@@ -10,12 +10,10 @@ Usage:
 """
 import os
 import sys
-import json
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from pathlib import Path
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
@@ -28,6 +26,16 @@ import pandas as pd
 DEFAULT_MODEL = os.path.join(_ROOT, "results", "fl_rounds", "global_model_latest.pth")
 DEFAULT_OUT   = os.path.join(_ROOT, "results", "attacks", "surrogate.pth")
 PROCESSED_DIR = os.path.join(_ROOT, "data", "processed")
+
+
+def _normalize_state_dict(state):
+    if not isinstance(state, dict):
+        return state
+    if any(key.startswith("_module.") for key in state):
+        return {key.removeprefix("_module."): value for key, value in state.items()}
+    if any(key.startswith("module.") for key in state):
+        return {key.removeprefix("module."): value for key, value in state.items()}
+    return state
 
 
 def load_public_features(label_col: str = "label"):
@@ -55,7 +63,7 @@ def main(model_path: str = DEFAULT_MODEL, out_path: str = DEFAULT_OUT,
     # Load target model to produce oracle labels (soft probs)
     # We load onto CPU for portability
     target = get_model(input_dim=input_dim, num_classes=get_num_classes())
-    state = torch.load(model_path, map_location="cpu")
+    state = _normalize_state_dict(torch.load(model_path, map_location="cpu"))
     target.load_state_dict(state)
     target.eval()
 

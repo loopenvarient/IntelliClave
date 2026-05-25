@@ -1,0 +1,65 @@
+{
+  "attack": "membership_inference",
+  "mode": "no_dp",
+  "results": [
+    {
+      "client_id": 1,
+      "client_name": "client1",
+      "n_members": 2173,
+      "n_nonmembers": 932,
+      "metrics": {
+        "auc": 0.504992,
+        "best_threshold": 0.200926,
+        "accuracy": 0.699839,
+        "precision": 0.699968,
+        "recall": 0.99954,
+        "member_conf_mean": 0.474159,
+        "nonmember_conf_mean": 0.47084,
+        "conf_gap": 0.003319
+      },
+      "risk_level": "LOW"
+    },
+    {
+      "client_id": 2,
+      "client_name": "client2",
+      "n_members": 2398,
+      "n_nonmembers": 1028,
+      "metrics": {
+        "auc": 0.485383,
+        "best_threshold": 0.197601,
+        "accuracy": 0.699942,
+        "precision": 0.699942,
+        "recall": 1.0,
+        "member_conf_mean": 0.436635,
+        "nonmember_conf_mean": 0.440895,
+        "conf_gap": -0.00426
+      },
+      "risk_level": "LOW"
+    },
+    {
+      "client_id": 3,
+      "client_name": "client3",
+      "n_members": 2637,
+      "n_nonmembers": 1131,
+      "metrics": {
+        "auc": 0.487974,
+        "best_threshold": 0.199804,
+        "accuracy": 0.700106,
+        "precision": 0.700133,
+        "recall": 0.999621,
+        "member_conf_mean": 0.424361,
+        "nonmember_conf_mean": 0.429581,
+        "conf_gap": -0.00522
+      },
+      "risk_level": "LOW"
+    }
+  ],
+  "summary": {
+    "avg_auc": 0.492783,
+    "avg_accuracy": 0.699962,
+    "avg_conf_gap": -0.002054,
+    "high_risk_clients": 0,
+    "verdict": "RESISTANT \u2014 confidence gap is small, attack near random (AUC \u2248 0.5)",
+    "dp_note": "Re-run with DP-trained model (--dp flag) to compare. DP-SGD should reduce the confidence gap and lower attack AUC."
+  }
+}

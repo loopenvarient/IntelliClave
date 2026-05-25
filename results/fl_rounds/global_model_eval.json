@@ -1,31 +1,17 @@
 {
-  "checkpoint": "results/fl_rounds/global_model_latest.pth",
+  "checkpoint": "results\\fl_rounds\\run_dp_hardened\\global_model_latest.pth",
   "per_client": [
     {
-      "client_csv": "data/processed/client1.csv",
+      "client_csv": "data\\processed\\client1.csv",
       "test_size": 621,
-      "loss": 0.27177,
-      "accuracy": 0.90177,
-      "macro_f1": 0.89867
-    },
-    {
-      "client_csv": "data/processed/client2.csv",
-      "test_size": 686,
-      "loss": 0.29575,
-      "accuracy": 0.89504,
-      "macro_f1": 0.89287
-    },
-    {
-      "client_csv": "data/processed/client3.csv",
-      "test_size": 754,
-      "loss": 0.19881,
-      "accuracy": 0.93767,
-      "macro_f1": 0.93967
+      "loss": 0.82528,
+      "accuracy": 0.7649,
+      "macro_f1": 0.7589
     }
   ],
   "overall_weighted": {
-    "loss": 0.25306,
-    "accuracy": 0.91266,
-    "macro_f1": 0.91174
+    "loss": 0.82528,
+    "accuracy": 0.7649,
+    "macro_f1": 0.7589
   }
 }

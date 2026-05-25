@@ -26,6 +26,44 @@ from model import get_model  # noqa: E402
 from train_local import evaluate  # noqa: E402
 
 
+def _strip_state_prefixes(state):
+    if not isinstance(state, dict):
+        return state
+    if any(key.startswith("_module.") for key in state):
+        return {key.removeprefix("_module."): value for key, value in state.items()}
+    if any(key.startswith("module.") for key in state):
+        return {key.removeprefix("module."): value for key, value in state.items()}
+    return state
+
+
+def _load_checkpoint(checkpoint_path: str):
+    state = torch.load(checkpoint_path, map_location="cpu")
+    # common wrappers: {'state_dict': {...}} or raw state dict
+    if isinstance(state, dict) and "state_dict" in state and isinstance(state["state_dict"], dict):
+        state = state["state_dict"]
+    return _strip_state_prefixes(state)
+
+
+def _infer_hidden_dims_from_state(state: dict, model_type: str):
+    if not isinstance(state, dict):
+        return None
+    if model_type == "mlp":
+        layers = []
+        idx = 0
+        # feature_extractor layer blocks are Linear, ReLU, Dropout → weights at indices 0,3,6...
+        while True:
+            key = f"feature_extractor.{idx}.weight"
+            if key not in state:
+                break
+            layers.append(int(state[key].shape[0]))
+            idx += 3
+        return tuple(layers) if layers else None
+    if model_type == "resnet-tabular":
+        if "input_proj.0.weight" in state:
+            return (int(state["input_proj.0.weight"].shape[0]),)
+    return None
+
+
 def evaluate_checkpoint(
     checkpoint_path: str,
     csv_paths: List[str],
@@ -68,9 +106,15 @@ def evaluate_checkpoint(
         global_std=global_std,
     )
 
-    model = get_model(metadata.input_dim, metadata.num_classes,
-                      model_type=model_type).to(device)
-    state_dict = torch.load(checkpoint_path, map_location=device)
+    # Load checkpoint and infer hidden dims (for compatibility with older checkpoints)
+    state_dict = _load_checkpoint(checkpoint_path)
+    hidden_dims = _infer_hidden_dims_from_state(state_dict, model_type)
+    model = get_model(
+        metadata.input_dim,
+        metadata.num_classes,
+        model_type=model_type,
+        hidden_dims=hidden_dims,
+    ).to(device)
     model.load_state_dict(state_dict, strict=True)
 
     criterion = nn.CrossEntropyLoss(

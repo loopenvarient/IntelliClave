@@ -2,11 +2,11 @@
   "round": 10,
   "total_rounds": 10,
   "clients": 3,
-  "loss": 0.23283,
-  "accuracy": 0.91363,
-  "macro_f1": 0.91403,
-  "save_dir": "results/fl_rounds/run_dp_rerun",
+  "loss": 1.15161,
+  "accuracy": 0.65066,
+  "macro_f1": 0.63978,
+  "save_dir": "results/fl_rounds\\run_20260525_110133",
   "model_type": "mlp",
   "early_stopped": false,
-  "epsilon": 2.99434
+  "epsilon": 1.49798
 }

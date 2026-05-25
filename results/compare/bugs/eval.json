@@ -1,0 +1,17 @@
+{
+  "checkpoint": "C:\\Users\\DELL\\OneDrive\\Documents\\IntelliClave\\IntelliClave\\results\\fl_rounds\\run_dp_hardened\\global_model_latest.pth",
+  "per_client": [
+    {
+      "client_csv": "data\\processed\\client1.csv",
+      "test_size": 621,
+      "loss": 0.82528,
+      "accuracy": 0.7649,
+      "macro_f1": 0.7589
+    }
+  ],
+  "overall_weighted": {
+    "loss": 0.82528,
+    "accuracy": 0.7649,
+    "macro_f1": 0.7589
+  }
+}

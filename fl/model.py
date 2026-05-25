@@ -5,8 +5,8 @@ Model architectures for IntelliClave FL.
 
 Three architectures are available — select via get_model(model_type=...):
 
-  "mlp"               : Feed-forward MLP (default). Fast, works well on most
-                        tabular datasets. Hidden dims: 128 → 64.
+    "mlp"               : Feed-forward MLP (default). Fast, works well on most
+                                                tabular datasets. Hidden dims: 96 → 48.
 
   "resnet-tabular"    : Residual MLP with skip connections. Better gradient
                         flow for deeper networks; useful when MLP underfits.
@@ -37,8 +37,20 @@ computation work exactly as before.
 """
 from typing import Iterable, List, Literal
 
+import os
+import sys
+
 import torch
 import torch.nn as nn
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from config.constants import (  # noqa: E402
+    DROPOUT_RATE,
+    FEATURE_NOISE_STD,
+    MI_NOISE_SCALE,
+    MI_TEMPERATURE,
+)
 
 ModelType = Literal["mlp", "resnet-tabular", "transformer-tabular"]
 
@@ -58,8 +70,9 @@ class FLClassifier(nn.Module):
         self,
         input_dim: int,
         num_classes: int,
-        hidden_dims: Iterable[int] = (128, 64),
-        dropout: float = 0.3,
+        hidden_dims: Iterable[int] = (96, 48),
+        dropout: float = DROPOUT_RATE,
+        feature_noise_std: float = FEATURE_NOISE_STD,
     ):
         super().__init__()
         layers: List[nn.Module] = []
@@ -73,11 +86,17 @@ class FLClassifier(nn.Module):
             ])
             prev = hidden_dim
 
-        layers.append(nn.Linear(prev, num_classes))
-        self.net = nn.Sequential(*layers)
+        self.feature_extractor = nn.Sequential(*layers)
+        self.representation_norm = nn.LayerNorm(prev)
+        self.classifier = nn.Linear(prev, num_classes)
+        self.feature_noise_std = feature_noise_std
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        features = self.feature_extractor(x)
+        features = self.representation_norm(features)
+        if self.training and self.feature_noise_std > 0:
+            features = features + torch.randn_like(features) * self.feature_noise_std
+        return self.classifier(features)
 
 
 # Backward-compat alias
@@ -114,9 +133,9 @@ class ResNetTabular(nn.Module):
         self,
         input_dim: int,
         num_classes: int,
-        hidden_dim: int = 128,
-        num_blocks: int = 3,
-        dropout: float = 0.3,
+        hidden_dim: int = 96,
+        num_blocks: int = 2,
+        dropout: float = DROPOUT_RATE,
     ):
         super().__init__()
         self.input_proj = nn.Sequential(
@@ -156,9 +175,9 @@ class TransformerTabular(nn.Module):
         self,
         input_dim: int,
         num_classes: int,
-        embed_dim: int = 32,
+        embed_dim: int = 24,
         num_heads: int = 4,
-        num_layers: int = 2,
+        num_layers: int = 1,
         dropout: float = 0.1,
     ):
         super().__init__()
@@ -211,10 +230,11 @@ class PrivacyWrapper(nn.Module):
     Parameters
     ----------
     base_model   : any nn.Module that returns raw logits
-    noise_scale  : scale of Laplace noise added to logits (default 0.5).
+    noise_scale  : scale of Laplace noise added to logits (default from
+                   MI_NOISE_SCALE).
                    Increase until avg cosine similarity in the attack drops
                    below 0.6. Values above ~2.0 start degrading top-1 accuracy.
-    temperature  : softmax temperature T > 1 (default 4.0).
+    temperature  : softmax temperature T > 1 (default from MI_TEMPERATURE).
                    Divides logits before softmax — flattens confidence peaks.
                    Does not change the argmax (predicted class), only probabilities.
     enabled      : set False to disable both defences (ablation / attack testing).
@@ -222,7 +242,7 @@ class PrivacyWrapper(nn.Module):
     Usage
     -----
     # At inference (dashboard /predict endpoint):
-    defended = PrivacyWrapper(base_model, noise_scale=0.5, temperature=4.0)
+    defended = PrivacyWrapper(base_model, noise_scale=MI_NOISE_SCALE, temperature=MI_TEMPERATURE)
     defended.eval()
     with torch.no_grad():
         probs = defended(x)   # returns softmax probabilities, not logits
@@ -236,8 +256,8 @@ class PrivacyWrapper(nn.Module):
     def __init__(
         self,
         base_model: nn.Module,
-        noise_scale: float = 0.5,
-        temperature: float = 4.0,
+        noise_scale: float = MI_NOISE_SCALE,
+        temperature: float = MI_TEMPERATURE,
         enabled: bool = True,
     ):
         super().__init__()
@@ -279,6 +299,7 @@ def get_model(
     input_dim: int,
     num_classes: int,
     model_type: ModelType = "mlp",
+    hidden_dims: Iterable[int] | None = None,
 ) -> nn.Module:
     """
     Build and return a bare model for FL training.
@@ -295,15 +316,20 @@ def get_model(
         return ResNetTabular(input_dim=input_dim, num_classes=num_classes)
     if model_type == "transformer-tabular":
         return TransformerTabular(input_dim=input_dim, num_classes=num_classes)
-    return FLClassifier(input_dim=input_dim, num_classes=num_classes)
+    return FLClassifier(
+        input_dim=input_dim,
+        num_classes=num_classes,
+        hidden_dims=hidden_dims or (96, 48),
+    )
 
 
 def get_defended_model(
     input_dim: int,
     num_classes: int,
     model_type: ModelType = "mlp",
-    noise_scale: float = 0.5,
-    temperature: float = 4.0,
+    hidden_dims: Iterable[int] | None = None,
+    noise_scale: float = MI_NOISE_SCALE,
+    temperature: float = MI_TEMPERATURE,
     enabled: bool = True,
 ) -> PrivacyWrapper:
     """
@@ -325,7 +351,7 @@ def get_defended_model(
     temperature : softmax temperature divisor  (default from MI_TEMPERATURE).
     enabled     : master switch — False disables both defences.
     """
-    base = get_model(input_dim, num_classes, model_type)
+    base = get_model(input_dim, num_classes, model_type, hidden_dims=hidden_dims)
     return PrivacyWrapper(
         base_model=base,
         noise_scale=noise_scale,

@@ -51,7 +51,49 @@ DEFAULT_LR    = 0.05
 DEFAULT_STEPS = 500
 
 
+def _strip_state_prefixes(state):
+    if not isinstance(state, dict):
+        return state
+    if any(key.startswith("_module.") for key in state):
+        return {key.removeprefix("_module."): value for key, value in state.items()}
+    if any(key.startswith("module.") for key in state):
+        return {key.removeprefix("module."): value for key, value in state.items()}
+    return state
+
+
+def _load_checkpoint(model_path: str):
+    state = torch.load(model_path, map_location="cpu", weights_only=True)
+    if isinstance(state, dict) and "state_dict" in state and isinstance(state["state_dict"], dict):
+        state = state["state_dict"]
+    return _strip_state_prefixes(state)
+
+
+def _infer_hidden_dims(state: dict, model_type: str):
+    if model_type == "mlp":
+        layers = []
+        layer_idx = 0
+        while True:
+            weight_key = f"feature_extractor.{layer_idx}.weight"
+            if weight_key not in state:
+                break
+            layers.append(int(state[weight_key].shape[0]))
+            layer_idx += 3
+        return tuple(layers) if layers else None
+    if model_type == "resnet-tabular" and "input_proj.0.weight" in state:
+        return (int(state["input_proj.0.weight"].shape[0]),)
+    return None
+
+
 def load_meta(label_col: str = LABEL_COL):
+    return load_meta_for_path(MODEL_PATH, label_col=label_col)
+
+
+def load_meta_for_path(model_path: str, label_col: str = LABEL_COL):
+    model_dir = os.path.dirname(os.path.abspath(model_path))
+    sibling_meta = os.path.join(model_dir, "model_meta.json")
+    if os.path.exists(sibling_meta):
+        with open(sibling_meta, encoding="utf-8") as f:
+            return json.load(f)
     if os.path.exists(META_PATH):
         with open(META_PATH, encoding="utf-8") as f:
             return json.load(f)
@@ -71,8 +113,11 @@ def load_meta(label_col: str = LABEL_COL):
 
 def load_model(input_dim, num_classes, model_path: str = MODEL_PATH):
     """Load the bare (undefended) model for unmitigated and masking modes."""
-    model = get_model(input_dim, num_classes)
-    state = torch.load(model_path, map_location="cpu", weights_only=True)
+    state = _load_checkpoint(model_path)
+    meta = load_meta_for_path(model_path)
+    model_type = meta.get("model_type", "mlp")
+    hidden_dims = _infer_hidden_dims(state, model_type)
+    model = get_model(input_dim, num_classes, model_type=model_type, hidden_dims=hidden_dims)
     model.load_state_dict(state)
     model.eval()
     return model
@@ -89,17 +134,19 @@ def load_defended(input_dim, num_classes, model_path: str = MODEL_PATH,
     wrapper = get_defended_model(
         input_dim=input_dim,
         num_classes=num_classes,
+        model_type=load_meta_for_path(model_path).get("model_type", "mlp"),
+        hidden_dims=_infer_hidden_dims(_load_checkpoint(model_path), load_meta_for_path(model_path).get("model_type", "mlp")),
         noise_scale=noise_scale,
         temperature=temperature,
         enabled=True,
     )
-    state = torch.load(model_path, map_location="cpu", weights_only=True)
+    state = _load_checkpoint(model_path)
     wrapper.base_model.load_state_dict(state)
     wrapper.eval()
     return wrapper
 
 
-def load_all_data(input_dim, label_col: str = LABEL_COL):
+def load_all_data(_input_dim, label_col: str = LABEL_COL):
     csvs = sorted(
         os.path.join(PROCESSED_DIR, f)
         for f in os.listdir(PROCESSED_DIR)
@@ -183,6 +230,19 @@ def l2_dist(a, b):
     return float(np.linalg.norm(np.array(a) - np.array(b)))
 
 
+def _prediction_metrics(final_out: torch.Tensor):
+    if final_out.min() >= 0 and final_out.max() <= 1 and abs(final_out.sum().item() - 1.0) < 0.05:
+        probs = final_out[0]
+    else:
+        probs = torch.softmax(final_out, dim=1)[0]
+    probs = torch.clamp(probs, min=1e-9)
+    entropy = float(-(probs * torch.log(probs)).sum().item())
+    top2 = torch.topk(probs, k=min(2, probs.numel())).values
+    sharpness = float((top2[0] - top2[1]).item()) if top2.numel() > 1 else float(top2[0].item())
+    confidence = float(probs.max().item())
+    return confidence, entropy, sharpness
+
+
 def run_mode(model, mode_label, num_classes, class_names, input_dim, centroids,
              steps, lr, mask_confidence, out_path):
     print(f"\n--- {mode_label} ---")
@@ -197,9 +257,17 @@ def run_mode(model, mode_label, num_classes, class_names, input_dim, centroids,
         centroid = centroids.get(cls, np.zeros(input_dim))
         cos_sim  = cosine_sim(recon, centroid)
         l2       = l2_dist(recon, centroid)
-        risk     = "HIGH" if cos_sim > 0.7 else "MEDIUM" if cos_sim > 0.4 else "LOW"
+        risk     = "HIGH" if cos_sim > 0.6 else "MEDIUM" if cos_sim > 0.35 else "LOW"
+
+        with torch.no_grad():
+            final_out = model(torch.tensor(recon, dtype=torch.float32).unsqueeze(0))
+        confidence, entropy, sharpness = _prediction_metrics(final_out)
+        recon_variance = float(np.var(recon))
 
         print(f"    Confidence : {confidence:.4f}")
+        print(f"    Entropy    : {entropy:.4f}")
+        print(f"    Sharpness  : {sharpness:.4f}")
+        print(f"    Recon var  : {recon_variance:.4f}")
         print(f"    Cosine sim : {cos_sim:.4f}")
         print(f"    L2 dist    : {l2:.4f}")
         print(f"    Risk       : {risk}")
@@ -208,6 +276,9 @@ def run_mode(model, mode_label, num_classes, class_names, input_dim, centroids,
             "class_id":            cls,
             "class_name":          name,
             "model_confidence":    round(confidence, 6),
+            "prediction_entropy":  round(entropy, 6),
+            "prediction_sharpness": round(sharpness, 6),
+            "reconstruction_variance": round(recon_variance, 6),
             "cosine_similarity":   round(cos_sim, 6),
             "l2_distance":         round(l2, 6),
             "loss_history":        loss_hist,
@@ -217,17 +288,23 @@ def run_mode(model, mode_label, num_classes, class_names, input_dim, centroids,
 
     avg_cos   = np.mean([r["cosine_similarity"] for r in results])
     avg_conf  = np.mean([r["model_confidence"]  for r in results])
+    avg_entropy = np.mean([r["prediction_entropy"] for r in results])
+    avg_sharpness = np.mean([r["prediction_sharpness"] for r in results])
+    avg_recon_var = np.mean([r["reconstruction_variance"] for r in results])
     high_risk = sum(1 for r in results if r["risk_level"] == "HIGH")
 
     summary = {
         "avg_cosine_similarity": round(float(avg_cos), 6),
         "avg_model_confidence":  round(float(avg_conf), 6),
+        "avg_prediction_entropy": round(float(avg_entropy), 6),
+        "avg_prediction_sharpness": round(float(avg_sharpness), 6),
+        "avg_reconstruction_variance": round(float(avg_recon_var), 6),
         "high_risk_classes":     high_risk,
         "verdict": (
             "VULNERABLE — model leaks class-level feature structure"
-            if avg_cos > 0.5 else
+            if avg_cos > 0.4 else
             "MODERATE — partial class structure leakage"
-            if avg_cos > 0.3 else
+            if avg_cos > 0.25 else
             "RESISTANT — reconstructed inputs do not match real data"
         ),
     }
@@ -256,7 +333,7 @@ def main(model_path: str = MODEL_PATH, label_col: str = LABEL_COL,
     print("Attack 1: Model Inversion")
     print("=" * 55)
 
-    meta        = load_meta(label_col=label_col)
+    meta        = load_meta_for_path(model_path, label_col=label_col)
     input_dim   = meta["input_dim"]
     num_classes = meta["num_classes"]
     class_names = meta["class_names"]

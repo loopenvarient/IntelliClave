@@ -523,6 +523,11 @@ def build_strategy(
     """
     round_config = make_fl_round_config(local_epochs, global_mean, global_std)
 
+    seed_model = get_model(input_dim, num_classes, model_type=model_type)
+    initial_parameters = fl.common.ndarrays_to_parameters(
+        [value.cpu().numpy() for value in seed_model.state_dict().values()]
+    )
+
     common_kwargs = dict(
         input_dim=input_dim,
         num_classes=num_classes,
@@ -540,6 +545,7 @@ def build_strategy(
         fit_metrics_aggregation_fn=weighted_average,
         on_fit_config_fn=lambda _: round_config,
         on_evaluate_config_fn=lambda _: round_config,
+        initial_parameters=initial_parameters,
         early_stopping_patience=early_stopping_patience,
         early_stopping_metric=early_stopping_metric,
         early_stopping_min_delta=early_stopping_min_delta,
@@ -569,7 +575,7 @@ def start_server(
     class_names: List[str] = None,
     num_rounds: int = 10,
     min_clients: int = 3,
-    local_epochs: int = 3,
+    local_epochs: int = 1,
     server_address: str = "0.0.0.0:8080",
     save_dir: str = "",
     use_crypto: bool = False,
@@ -746,7 +752,7 @@ if __name__ == "__main__":
                         help="Number of output classes. Inferred from data if not set.")
     parser.add_argument("--rounds", type=int, default=10)
     parser.add_argument("--min-clients", type=int, default=3)
-    parser.add_argument("--local-epochs", type=int, default=3)
+    parser.add_argument("--local-epochs", type=int, default=1)
     parser.add_argument("--address", default="0.0.0.0:8080")
     parser.add_argument("--save-dir", default="",
                         help="Output directory. Auto-generates a timestamped path if not set.")

@@ -12,15 +12,13 @@ import json
 import os
 import sys
 from collections import OrderedDict
-from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 import flwr as fl
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from flwr.common import Metrics
 
 sys.path.insert(0, os.path.dirname(__file__))
 from data_utils import (  # noqa: E402
@@ -32,13 +30,11 @@ from data_utils import (  # noqa: E402
     validate_client_schemas,
 )
 from fl_server import (  # noqa: E402
-    SaveModelStrategy,
     _write_run_summary,
     build_strategy,
     coordinate_global_normalization,
     make_timestamped_save_dir,
     monitor_client_distributions,
-    weighted_average,
 )
 from model import get_model  # noqa: E402
 from train_local import evaluate, train_one_epoch  # noqa: E402
@@ -58,8 +54,8 @@ class SimClient(fl.client.NumPyClient):
         model_type: str = "mlp",
         batch_size: int = 32,
         use_dp: bool = False,
-        target_epsilon: float = 10.0,
-        max_grad_norm: float = 1.0,
+        target_epsilon: float = 1.5,
+        max_grad_norm: float = 0.5,
         num_fl_rounds: int = NUM_ROUNDS,
         global_mean: Optional[np.ndarray] = None,
         global_std: Optional[np.ndarray] = None,
@@ -131,7 +127,7 @@ class SimClient(fl.client.NumPyClient):
             print(f"[SimClient {self.cid}][DP] WARNING: Opacus not installed. Running without DP.")
             self.use_dp = False
 
-    def get_parameters(self, config):
+    def get_parameters(self, _config):
         return [value.cpu().numpy() for value in self.model.state_dict().values()]
 
     def set_parameters(self, params):
@@ -168,7 +164,7 @@ class SimClient(fl.client.NumPyClient):
             metrics,
         )
 
-    def evaluate(self, params, config):
+    def evaluate(self, params, _config):
         self.set_parameters(params)
         total_loss = 0.0
         n_examples = 0
@@ -190,7 +186,7 @@ class SimClient(fl.client.NumPyClient):
 def main(
     num_rounds: int = NUM_ROUNDS,
     num_clients: int = NUM_CLIENTS,
-    local_epochs: int = 3,
+    local_epochs: int = 1,
     learning_rate: float = 1e-3,
     batch_size: int = 32,
     save_dir: str = "",
@@ -202,8 +198,8 @@ def main(
     early_stopping_metric: str = "loss",
     monitor_distributions: bool = True,
     use_dp: bool = False,
-    target_epsilon: float = 10.0,
-    max_grad_norm: float = 1.0,
+    target_epsilon: float = 1.5,
+    max_grad_norm: float = 0.5,
 ):
     # Auto-generate timestamped save dir
     if not save_dir:
@@ -318,7 +314,7 @@ def main(
         },
     }
     out_path = os.path.join(save_dir, "fl_history.json")
-    with open(out_path, "w") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
     print(f"\nFL simulation done -> {out_path}")
 
@@ -347,7 +343,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--rounds",      type=int,   default=NUM_ROUNDS)
     parser.add_argument("--clients",     type=int,   default=NUM_CLIENTS)
-    parser.add_argument("--local-epochs",type=int,   default=3)
+    parser.add_argument("--local-epochs",type=int,   default=1)
     parser.add_argument("--lr",          type=float, default=1e-3,
                         help="Learning rate.")
     parser.add_argument("--batch-size",  type=int,   default=32,
@@ -371,9 +367,9 @@ if __name__ == "__main__":
                         help="Metric to monitor for early stopping.")
     parser.add_argument("--dp", action="store_true",
                         help="Enable Differential Privacy via Opacus.")
-    parser.add_argument("--epsilon", type=float, default=10.0,
+    parser.add_argument("--epsilon", type=float, default=1.5,
                         help="Target epsilon (privacy budget) when --dp is enabled.")
-    parser.add_argument("--max-grad-norm", type=float, default=1.0,
+    parser.add_argument("--max-grad-norm", type=float, default=0.5,
                         help="Gradient clipping norm for DP-SGD.")
     parser.add_argument("--no-distribution-monitor", action="store_true",
                         help="Skip the pre-training distribution report.")

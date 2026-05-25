@@ -2,64 +2,64 @@
   "rounds": [
     {
       "round": 1,
-      "loss": 1.72127,
-      "accuracy": 0.34837,
-      "macro_f1": 0.19867
+      "loss": 1.83548,
+      "accuracy": 0.1902,
+      "macro_f1": 0.1711
     },
     {
       "round": 2,
-      "loss": 1.56671,
-      "accuracy": 0.49782,
-      "macro_f1": 0.4002
+      "loss": 1.74424,
+      "accuracy": 0.25667,
+      "macro_f1": 0.23245
     },
     {
       "round": 3,
-      "loss": 1.2919,
-      "accuracy": 0.71713,
-      "macro_f1": 0.68281
+      "loss": 1.6593,
+      "accuracy": 0.32945,
+      "macro_f1": 0.30618
     },
     {
       "round": 4,
-      "loss": 0.97323,
-      "accuracy": 0.80689,
-      "macro_f1": 0.79226
+      "loss": 1.58893,
+      "accuracy": 0.3935,
+      "macro_f1": 0.37167
     },
     {
       "round": 5,
-      "loss": 0.71185,
-      "accuracy": 0.83649,
-      "macro_f1": 0.82673
+      "loss": 1.52547,
+      "accuracy": 0.44978,
+      "macro_f1": 0.42551
     },
     {
       "round": 6,
-      "loss": 0.51401,
-      "accuracy": 0.86754,
-      "macro_f1": 0.86366
+      "loss": 1.46054,
+      "accuracy": 0.49733,
+      "macro_f1": 0.47236
     },
     {
       "round": 7,
-      "loss": 0.38818,
-      "accuracy": 0.88113,
-      "macro_f1": 0.87853
+      "loss": 1.38739,
+      "accuracy": 0.54148,
+      "macro_f1": 0.52172
     },
     {
       "round": 8,
-      "loss": 0.29833,
-      "accuracy": 0.89762,
-      "macro_f1": 0.89637
+      "loss": 1.31649,
+      "accuracy": 0.57787,
+      "macro_f1": 0.56064
     },
     {
       "round": 9,
-      "loss": 0.25393,
-      "accuracy": 0.91024,
-      "macro_f1": 0.90993
+      "loss": 1.22816,
+      "accuracy": 0.62931,
+      "macro_f1": 0.61722
     },
     {
       "round": 10,
-      "loss": 0.23283,
-      "accuracy": 0.91363,
-      "macro_f1": 0.91403
+      "loss": 1.15161,
+      "accuracy": 0.65066,
+      "macro_f1": 0.63978
     }
   ],
-  "save_dir": "results/fl_rounds/run_dp_rerun"
+  "save_dir": "results/fl_rounds\\run_20260525_110133"
 }

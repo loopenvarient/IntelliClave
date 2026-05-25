@@ -14,7 +14,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-sys.path.insert(0, os.path.dirname(__file__))
+_HERE = os.path.dirname(__file__)
+_ROOT = os.path.abspath(os.path.join(_HERE, ".."))
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, _HERE)
+from config.constants import DEFAULT_EPSILON  # noqa: E402
 from data_utils import (  # noqa: E402
     global_norm_arrays_from_config,
     load_class_weights,
@@ -50,13 +54,13 @@ class IntelliClaveClient(fl.client.NumPyClient):
         model_type: str = "mlp",
         # ── DP parameters — all optional, default = DP off ───────────────────────
         use_dp: bool = False,
-        target_epsilon: float = 10.0,
-        max_grad_norm: float = 1.0,
+        target_epsilon: float = DEFAULT_EPSILON,
+        max_grad_norm: float = 0.3,
         num_fl_rounds: int = 10,
         # ─────────────────────────────────────────────────────────────────────────
         # ── Crypto: optional encryption of weights in transit ────────────────────
         use_crypto: bool = False,
-        server_public_pem: bytes = None,
+        server_public_key_pem: bytes = None,
         global_mean: Optional[np.ndarray] = None,
         global_std: Optional[np.ndarray] = None,
         # ─────────────────────────────────────────────────────────────────────────
@@ -73,10 +77,10 @@ class IntelliClaveClient(fl.client.NumPyClient):
         self.num_fl_rounds = num_fl_rounds
 
         # Set up client-side crypto context
-        self.use_crypto = use_crypto and _CRYPTO_AVAILABLE and server_public_pem is not None
+        self.use_crypto = use_crypto and _CRYPTO_AVAILABLE and server_public_key_pem is not None
         self._crypto_ctx = None
         if self.use_crypto:
-            self._crypto_ctx = CryptoContext.from_public_pem(server_public_pem)
+            self._crypto_ctx = CryptoContext.from_public_pem(server_public_key_pem)
             print(f"[Client {client_id}][Crypto] Encryption enabled — weights will be "
                   "AES-256-GCM encrypted before transmission.")
         elif use_crypto:
@@ -195,7 +199,7 @@ class IntelliClaveClient(fl.client.NumPyClient):
     # ─────────────────────────────────────────────────────────────────────────────
 
     # Returns plaintext weights (server reads these for init)
-    def get_parameters(self, config) -> List[np.ndarray]:
+    def get_parameters(self, _config) -> List[np.ndarray]:
         return [value.cpu().numpy() for value in self.model.state_dict().values()]
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -298,12 +302,12 @@ def start_client(
     local_epochs: int = 3,
     learning_rate: float = 1e-3,
     use_dp: bool = False,
-    target_epsilon: float = 10.0,
-    max_grad_norm: float = 1.0,
+    target_epsilon: float = DEFAULT_EPSILON,
+    max_grad_norm: float = 0.3,
     num_fl_rounds: int = 10,
     batch_size: int = 32,
     use_crypto: bool = False,
-    server_public_pem: bytes = None,
+    server_public_key_pem: bytes = None,
     global_mean: Optional[np.ndarray] = None,
     global_std: Optional[np.ndarray] = None,
     norm_config_path: Optional[str] = None,
@@ -326,7 +330,7 @@ def start_client(
             num_fl_rounds=num_fl_rounds,
             batch_size=batch_size,
             use_crypto=use_crypto,
-            server_public_pem=server_public_pem,
+            server_public_key_pem=server_public_key_pem,
             global_mean=global_mean,
             global_std=global_std,
         ),
@@ -356,7 +360,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Load public key if crypto enabled
-    server_public_pem = None
+    server_public_key_pem = None
     if args.crypto:
         pubkey_path = args.pubkey or os.path.join(
             os.path.dirname(__file__), "..", "crypto", "certs", "keys", "server_public.pem"
@@ -368,7 +372,7 @@ if __name__ == "__main__":
                   "then copy server_public.pem to clients.")
             raise SystemExit(1)
         with open(pubkey_path, "rb") as f:
-            server_public_pem = f.read()
+            server_public_key_pem = f.read()
         print(f"[Crypto] Loaded server public key from {pubkey_path}")
     # ─────────────────────────────────────────────────────────────────────────────
 
@@ -385,5 +389,5 @@ if __name__ == "__main__":
         max_grad_norm=args.max_grad_norm,
         num_fl_rounds=args.rounds,
         use_crypto=args.crypto,
-        server_public_pem=server_public_pem,
+        server_public_key_pem=server_public_key_pem,
     )

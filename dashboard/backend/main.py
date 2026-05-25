@@ -20,6 +20,7 @@ import json
 import os
 import sys
 import time
+import random
 from collections import defaultdict
 from typing import List, Optional, Dict, Any
 
@@ -41,15 +42,28 @@ from model import get_defended_model  # noqa: E402  ← replaces bare get_model
 
 # ── Defence constants — override via env vars in production ───────────────────
 try:
-    from constants import MI_NOISE_SCALE, MI_TEMPERATURE, MI_DEFENCE_ENABLED
+    from constants import (
+        MI_NOISE_SCALE,
+        MI_TEMPERATURE,
+        MI_DEFENCE_ENABLED,
+        OUTPUT_PROB_ROUNDING_STEP,
+        OUTPUT_TOP_K,
+        OUTPUT_RANDOM_RESPONSE_PROB,
+    )
 except ImportError:
     MI_NOISE_SCALE    = 0.5
     MI_TEMPERATURE    = 4.0
     MI_DEFENCE_ENABLED = True
+    OUTPUT_PROB_ROUNDING_STEP = 0.1
+    OUTPUT_TOP_K = 1
+    OUTPUT_RANDOM_RESPONSE_PROB = 0.05
 
 _noise_scale   = float(os.environ.get("MI_NOISE_SCALE",    MI_NOISE_SCALE))
 _temperature   = float(os.environ.get("MI_TEMPERATURE",    MI_TEMPERATURE))
 _defence_on    = os.environ.get("MI_DEFENCE_ENABLED", str(MI_DEFENCE_ENABLED)).lower() not in ("0", "false")
+_prob_rounding_step = float(os.environ.get("OUTPUT_PROB_ROUNDING_STEP", OUTPUT_PROB_ROUNDING_STEP))
+_top_k = max(1, int(os.environ.get("OUTPUT_TOP_K", OUTPUT_TOP_K)))
+_random_response_prob = float(os.environ.get("OUTPUT_RANDOM_RESPONSE_PROB", OUTPUT_RANDOM_RESPONSE_PROB))
 # ─────────────────────────────────────────────────────────────────────────────
 
 app = FastAPI(title="IntelliClave Dashboard API", version="1.0.0")
@@ -83,11 +97,11 @@ ISSUED_TOKEN_STORE = {}
 def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
     if credentials is None:
         return {"username": "anonymous", "role": "viewer", "is_anonymous": True}
-    token = credentials.credentials
-    user = TOKEN_STORE.get(token)
+    auth_token = credentials.credentials
+    user = TOKEN_STORE.get(auth_token)
     if user:
         return user
-    user = ISSUED_TOKEN_STORE.get(token)
+    user = ISSUED_TOKEN_STORE.get(auth_token)
     if user:
         return user
     raise HTTPException(status_code=401, detail="Invalid or missing authentication token")
@@ -118,6 +132,10 @@ RATE_LIMIT_MAX    = 100
 RATE_LIMIT_WINDOW = 60
 _query_log: dict  = defaultdict(list)
 
+PREDICT_RATE_LIMIT_MAX = int(os.environ.get("PREDICT_RATE_LIMIT_MAX", "20"))
+PREDICT_RATE_LIMIT_WINDOW = int(os.environ.get("PREDICT_RATE_LIMIT_WINDOW", "60"))
+_predict_query_log: dict = defaultdict(list)
+
 
 def _check_rate_limit(client_ip: str):
     now    = time.time()
@@ -130,6 +148,21 @@ def _check_rate_limit(client_ip: str):
                    f"per {RATE_LIMIT_WINDOW}s. Try again later.",
         )
     _query_log[client_ip].append(now)
+
+
+def _check_predict_rate_limit(client_ip: str):
+    now = time.time()
+    window = now - PREDICT_RATE_LIMIT_WINDOW
+    _predict_query_log[client_ip] = [t for t in _predict_query_log[client_ip] if t > window]
+    if len(_predict_query_log[client_ip]) >= PREDICT_RATE_LIMIT_MAX:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Prediction rate limit exceeded: max {PREDICT_RATE_LIMIT_MAX} queries "
+                f"per {PREDICT_RATE_LIMIT_WINDOW}s. Try again later."
+            ),
+        )
+    _predict_query_log[client_ip].append(now)
 
 # ── Model loader with staleness detection ─────────────────────────────────────
 _model_cache: dict = {}
@@ -264,6 +297,7 @@ def _get_model():
 class PredictRequest(BaseModel):
     features: List[float]
     return_confidence: bool = False
+    randomized_response: bool = True
 
 
 class PredictResponse(BaseModel):
@@ -405,9 +439,8 @@ def predict(payload: PredictRequest, request: Request, user=Depends(require_auth
     Model inversion defences active (when MI_DEFENCE_ENABLED=True):
       1. Output perturbation — Laplace noise on logits (scale=MI_NOISE_SCALE).
       2. Temperature scaling — logits divided by MI_TEMPERATURE before softmax.
-      3. Confidence masking — top-1 label returned by default; top-1 score only
-         when return_confidence=true (no full probability vector ever exposed).
-      4. Rate limiting — max 100 queries per IP per 60 seconds → HTTP 429.
+        3. Confidence masking — label-only output for non-admin users.
+        4. Query throttling — separate prediction rate limit plus a global IP limit.
 
     Defence parameters can be tuned without retraining:
       export MI_NOISE_SCALE=1.0    # increase if cosine sim still above 0.6
@@ -416,6 +449,7 @@ def predict(payload: PredictRequest, request: Request, user=Depends(require_auth
     """
     client_ip = request.client.host
     _check_rate_limit(client_ip)
+    _check_predict_rate_limit(client_ip)
 
     model, meta, preprocessing = _get_model()
     expected_dim = meta["input_dim"]
@@ -450,6 +484,26 @@ def predict(payload: PredictRequest, request: Request, user=Depends(require_auth
     x = (x - mean_tensor) / std_tensor
     x = x.unsqueeze(0)
 
+    def _round_probs(probs_tensor: torch.Tensor) -> torch.Tensor:
+        if _prob_rounding_step <= 0:
+            return probs_tensor
+        rounded = torch.round(probs_tensor / _prob_rounding_step) * _prob_rounding_step
+        rounded = torch.clamp(rounded, min=0.0)
+        total = float(rounded.sum().item())
+        if total <= 0:
+            return probs_tensor
+        return rounded / total
+
+    def _maybe_randomize(pred_idx: int, probs_tensor: torch.Tensor) -> int:
+        if user.get("role") == "admin" and not payload.randomized_response:
+            return pred_idx
+        if _random_response_prob <= 0:
+            return pred_idx
+        if random.random() >= _random_response_prob:
+            return pred_idx
+        choices = [i for i in range(probs_tensor.numel()) if i != pred_idx]
+        return random.choice(choices) if choices else pred_idx
+
     # ── Defended inference ────────────────────────────────────────────────────
     # model is a PrivacyWrapper in eval() mode.
     # PrivacyWrapper.forward() applies Laplace noise + temperature scaling and
@@ -458,17 +512,19 @@ def predict(payload: PredictRequest, request: Request, user=Depends(require_auth
     # parameters beyond base_model — but we keep it for memory efficiency.
     with torch.no_grad():
         probs = model(x).squeeze()   # shape: (num_classes,)
+    probs = _round_probs(probs)
     # ─────────────────────────────────────────────────────────────────────────
 
     pred_class = int(probs.argmax().item())
+    pred_class = _maybe_randomize(pred_class, probs)
     pred_label = (class_names[pred_class]
                   if pred_class < len(class_names) else str(pred_class))
 
-    # Return confidence only if explicitly requested (confidence masking).
-    # Never expose the full probability vector.
+    # Return confidence only for admins and only when explicitly requested.
+    # Non-admin callers get label-only output.
     confidence = None
-    if payload.return_confidence:
-        confidence = round(float(probs[pred_class].item()), 4)
+    if user.get("role") == "admin" and payload.return_confidence:
+        confidence = round(min(float(probs[pred_class].item()), 0.6), 2)
 
     return PredictResponse(
         predicted_class=pred_class,
