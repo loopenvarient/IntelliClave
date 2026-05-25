@@ -2,34 +2,64 @@
   "rounds": [
     {
       "round": 1,
-      "loss": 1.67205,
-      "accuracy": 0.51722,
-      "macro_f1": 0.41491
+      "loss": 1.72127,
+      "accuracy": 0.34837,
+      "macro_f1": 0.19867
     },
     {
       "round": 2,
-      "loss": 1.40029,
-      "accuracy": 0.69384,
-      "macro_f1": 0.6286
+      "loss": 1.56671,
+      "accuracy": 0.49782,
+      "macro_f1": 0.4002
     },
     {
       "round": 3,
-      "loss": 0.98099,
-      "accuracy": 0.79767,
-      "macro_f1": 0.77651
+      "loss": 1.2919,
+      "accuracy": 0.71713,
+      "macro_f1": 0.68281
     },
     {
       "round": 4,
-      "loss": 0.64116,
-      "accuracy": 0.84328,
-      "macro_f1": 0.83454
+      "loss": 0.97323,
+      "accuracy": 0.80689,
+      "macro_f1": 0.79226
     },
     {
       "round": 5,
-      "loss": 0.42509,
-      "accuracy": 0.88549,
-      "macro_f1": 0.88279
+      "loss": 0.71185,
+      "accuracy": 0.83649,
+      "macro_f1": 0.82673
+    },
+    {
+      "round": 6,
+      "loss": 0.51401,
+      "accuracy": 0.86754,
+      "macro_f1": 0.86366
+    },
+    {
+      "round": 7,
+      "loss": 0.38818,
+      "accuracy": 0.88113,
+      "macro_f1": 0.87853
+    },
+    {
+      "round": 8,
+      "loss": 0.29833,
+      "accuracy": 0.89762,
+      "macro_f1": 0.89637
+    },
+    {
+      "round": 9,
+      "loss": 0.25393,
+      "accuracy": 0.91024,
+      "macro_f1": 0.90993
+    },
+    {
+      "round": 10,
+      "loss": 0.23283,
+      "accuracy": 0.91363,
+      "macro_f1": 0.91403
     }
   ],
-  "save_dir": "results\\fl_rounds"
+  "save_dir": "results/fl_rounds/run_dp_rerun"
 }

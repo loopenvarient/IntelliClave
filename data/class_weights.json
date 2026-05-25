@@ -1,5 +1,4 @@
 {
-  "_comment": "Class weights keyed by 0-based integer index. Replace with your dataset's weights or delete this file to disable weighted loss. The load_class_weights() function also accepts legacy name-keyed format.",
   "0": 0.996806,
   "1": 1.111723,
   "2": 1.220839,

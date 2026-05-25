@@ -16,6 +16,24 @@ Three architectures are available — select via get_model(model_type=...):
                         many correlated features (100+).
 
 All architectures accept any input_dim and num_classes — no hardcoded sizes.
+
+Model Inversion Defence
+-----------------------
+Use get_defended_model() instead of get_model() when serving predictions.
+It wraps any architecture in PrivacyWrapper, which applies two defences at
+inference time:
+
+  1. Output perturbation — Laplace noise added to raw logits before softmax.
+     Breaks the clean gradient signal the inversion optimizer needs.
+
+  2. Temperature scaling — logits divided by T > 1 before softmax.
+     Flattens confidence peaks so reconstructed inputs have lower cosine
+     similarity to real class centroids.
+
+Training is unaffected: PrivacyWrapper.forward() is only active during
+model.eval() (i.e. torch.no_grad() inference calls). During training
+(model.train()) it passes logits through unchanged so DP-SGD and loss
+computation work exactly as before.
 """
 from typing import Iterable, List, Literal
 
@@ -179,7 +197,82 @@ class TransformerTabular(nn.Module):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Factory
+# Model Inversion Defence — PrivacyWrapper
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PrivacyWrapper(nn.Module):
+    """
+    Wraps any classifier with two output-space model-inversion defences.
+
+    Defences are applied ONLY during eval() (i.e. inference / torch.no_grad()).
+    During train() they are bypassed so that DP-SGD, loss computation, and
+    Opacus gradient hooks all see clean, unperturbed logits.
+
+    Parameters
+    ----------
+    base_model   : any nn.Module that returns raw logits
+    noise_scale  : scale of Laplace noise added to logits (default 0.5).
+                   Increase until avg cosine similarity in the attack drops
+                   below 0.6. Values above ~2.0 start degrading top-1 accuracy.
+    temperature  : softmax temperature T > 1 (default 4.0).
+                   Divides logits before softmax — flattens confidence peaks.
+                   Does not change the argmax (predicted class), only probabilities.
+    enabled      : set False to disable both defences (ablation / attack testing).
+
+    Usage
+    -----
+    # At inference (dashboard /predict endpoint):
+    defended = PrivacyWrapper(base_model, noise_scale=0.5, temperature=4.0)
+    defended.eval()
+    with torch.no_grad():
+        probs = defended(x)   # returns softmax probabilities, not logits
+
+    # During FL training — use base_model directly, not the wrapper:
+    base_model.train()
+    logits = base_model(x)    # raw logits, defences inactive
+    loss = criterion(logits, y)
+    """
+
+    def __init__(
+        self,
+        base_model: nn.Module,
+        noise_scale: float = 0.5,
+        temperature: float = 4.0,
+        enabled: bool = True,
+    ):
+        super().__init__()
+        self.base_model  = base_model
+        self.noise_scale = noise_scale
+        self.temperature = temperature
+        self.enabled     = enabled
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        logits = self.base_model(x)
+
+        # Defences only active during inference (eval mode + no_grad context).
+        # self.training is False whenever model.eval() has been called.
+        if self.enabled and not self.training:
+            # 1. Output perturbation — Laplace noise on raw logits.
+            #    Breaks the clean gradient signal the inversion optimizer follows.
+            noise  = torch.distributions.Laplace(
+                torch.zeros_like(logits),
+                self.noise_scale * torch.ones_like(logits),
+            ).sample()
+            logits = logits + noise
+
+            # 2. Temperature scaling — flatten confidence peaks.
+            #    Does not change argmax; only squeezes the probability vector.
+            logits = logits / self.temperature
+
+        # Always return softmax probabilities from the defended model so the
+        # /predict endpoint doesn't need to call softmax separately.
+        # During training this is still raw logits / temperature=1 → same as before
+        # because the temperature branch above is skipped.
+        return torch.softmax(logits, dim=-1) if not self.training else logits
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Factories
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_model(
@@ -188,17 +281,54 @@ def get_model(
     model_type: ModelType = "mlp",
 ) -> nn.Module:
     """
-    Build and return a model for FL classification.
+    Build and return a bare model for FL training.
 
     Parameters
     ----------
     input_dim  : number of input features (inferred from CSV at runtime)
     num_classes: number of output classes  (inferred from CSV at runtime)
     model_type : "mlp" | "resnet-tabular" | "transformer-tabular"
+
+    Returns raw logits — use get_defended_model() for inference serving.
     """
     if model_type == "resnet-tabular":
         return ResNetTabular(input_dim=input_dim, num_classes=num_classes)
     if model_type == "transformer-tabular":
         return TransformerTabular(input_dim=input_dim, num_classes=num_classes)
-    # default: mlp
     return FLClassifier(input_dim=input_dim, num_classes=num_classes)
+
+
+def get_defended_model(
+    input_dim: int,
+    num_classes: int,
+    model_type: ModelType = "mlp",
+    noise_scale: float = 0.5,
+    temperature: float = 4.0,
+    enabled: bool = True,
+) -> PrivacyWrapper:
+    """
+    Build a model wrapped in PrivacyWrapper for inference serving.
+
+    Call this in the dashboard /predict endpoint instead of get_model().
+    The returned wrapper shares no state with the training model — load
+    state_dict into wrapper.base_model after calling this function:
+
+        wrapper = get_defended_model(input_dim, num_classes)
+        wrapper.base_model.load_state_dict(
+            torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+        )
+        wrapper.eval()
+
+    Parameters
+    ----------
+    noise_scale : Laplace noise scale on logits (default from MI_NOISE_SCALE).
+    temperature : softmax temperature divisor  (default from MI_TEMPERATURE).
+    enabled     : master switch — False disables both defences.
+    """
+    base = get_model(input_dim, num_classes, model_type)
+    return PrivacyWrapper(
+        base_model=base,
+        noise_scale=noise_scale,
+        temperature=temperature,
+        enabled=enabled,
+    )

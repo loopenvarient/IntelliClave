@@ -12,9 +12,16 @@ Method:
   - Compare reconstructed inputs to real class centroids via cosine similarity
     and L2 distance.
 
+Three modes are tested:
+  1. unmitigated          — bare model, no defences
+  2. confidence masked    — legacy mitigation (masking only), kept for comparison
+  3. privacy wrapper      — new PrivacyWrapper (Laplace noise + temperature scaling)
+                            uses MI_NOISE_SCALE / MI_TEMPERATURE from constants.py
+
 Output:
-  results/attacks/model_inversion.json
-  results/attacks/model_inversion_mitigated.json
+  results/attacks/model_inversion.json           (unmitigated)
+  results/attacks/model_inversion_mitigated.json (confidence masked)
+  results/attacks/model_inversion_defended.json  (PrivacyWrapper — new)
 """
 
 import json
@@ -30,27 +37,24 @@ from sklearn.preprocessing import StandardScaler
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
 sys.path.insert(0, os.path.join(_ROOT, "fl"))
-
-from model import get_model          # noqa: E402
-from data_utils import infer_csv_schema  # noqa: E402
-
 sys.path.insert(0, os.path.join(_ROOT, "config"))
-from constants import LABEL_COL      # noqa: E402
 
-MODEL_PATH   = os.path.join(_ROOT, "results", "fl_rounds", "global_model_latest.pth")
-META_PATH    = os.path.join(_ROOT, "results", "fl_rounds", "model_meta.json")
+from model import get_model, get_defended_model   # noqa: E402
+from data_utils import infer_csv_schema            # noqa: E402
+from constants import LABEL_COL, MI_NOISE_SCALE, MI_TEMPERATURE  # noqa: E402
+
+MODEL_PATH    = os.path.join(_ROOT, "results", "fl_rounds", "global_model_latest.pth")
+META_PATH     = os.path.join(_ROOT, "results", "fl_rounds", "model_meta.json")
 PROCESSED_DIR = os.path.join(_ROOT, "data", "processed")
-OUT_PATH     = os.path.join(_ROOT, "results", "attacks", "model_inversion.json")
+OUT_PATH      = os.path.join(_ROOT, "results", "attacks", "model_inversion.json")
 DEFAULT_LR    = 0.05
 DEFAULT_STEPS = 500
 
 
 def load_meta(label_col: str = LABEL_COL):
-    """Load model metadata (input_dim, num_classes, class_names)."""
     if os.path.exists(META_PATH):
         with open(META_PATH, encoding="utf-8") as f:
             return json.load(f)
-    # Fallback: infer from first CSV
     csvs = sorted(f for f in os.listdir(PROCESSED_DIR) if f.endswith(".csv"))
     if not csvs:
         raise FileNotFoundError("No model_meta.json and no CSVs in data/processed/")
@@ -59,13 +63,14 @@ def load_meta(label_col: str = LABEL_COL):
     df = pd.read_csv(first_csv, usecols=[label_col])
     num_classes = int(df[label_col].nunique())
     return {
-        "input_dim": input_dim,
+        "input_dim":   input_dim,
         "num_classes": num_classes,
         "class_names": [f"class_{i}" for i in range(num_classes)],
     }
 
 
 def load_model(input_dim, num_classes, model_path: str = MODEL_PATH):
+    """Load the bare (undefended) model for unmitigated and masking modes."""
     model = get_model(input_dim, num_classes)
     state = torch.load(model_path, map_location="cpu", weights_only=True)
     model.load_state_dict(state)
@@ -73,8 +78,28 @@ def load_model(input_dim, num_classes, model_path: str = MODEL_PATH):
     return model
 
 
+def load_defended(input_dim, num_classes, model_path: str = MODEL_PATH,
+                  noise_scale: float = MI_NOISE_SCALE,
+                  temperature: float = MI_TEMPERATURE):
+    """
+    Load the PrivacyWrapper-defended model.
+    Weights are loaded into wrapper.base_model so Opacus checkpoints
+    (which only contain the inner model's state_dict) load correctly.
+    """
+    wrapper = get_defended_model(
+        input_dim=input_dim,
+        num_classes=num_classes,
+        noise_scale=noise_scale,
+        temperature=temperature,
+        enabled=True,
+    )
+    state = torch.load(model_path, map_location="cpu", weights_only=True)
+    wrapper.base_model.load_state_dict(state)
+    wrapper.eval()
+    return wrapper
+
+
 def load_all_data(input_dim, label_col: str = LABEL_COL):
-    """Load + scale all client CSVs, return (X, y) combined."""
     csvs = sorted(
         os.path.join(PROCESSED_DIR, f)
         for f in os.listdir(PROCESSED_DIR)
@@ -99,6 +124,13 @@ def class_centroids(X, y, num_classes):
 
 def invert_class(model, target_class, input_dim, steps=DEFAULT_STEPS, lr=DEFAULT_LR,
                  mask_confidence=False):
+    """
+    Gradient-based input reconstruction for the target class.
+
+    For the PrivacyWrapper-defended model the inversion loop still runs, but
+    the noise injected at each forward pass corrupts the gradient signal —
+    the optimizer cannot climb toward a clean class prototype.
+    """
     x = torch.randn(1, input_dim, requires_grad=True)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam([x], lr=lr)
@@ -107,17 +139,37 @@ def invert_class(model, target_class, input_dim, steps=DEFAULT_STEPS, lr=DEFAULT
 
     for step in range(steps):
         optimizer.zero_grad()
-        logits = model(x)
-        if mask_confidence:
-            loss = criterion(logits, target) + 0.1 * x.pow(2).sum()
+        out = model(x)
+
+        # For PrivacyWrapper the output is already softmax probabilities.
+        # CrossEntropyLoss expects logits, so we convert back via log.
+        # For bare models out is raw logits — no conversion needed.
+        if out.min() >= 0 and out.max() <= 1 and abs(out.sum().item() - 1.0) < 0.05:
+            # Looks like probabilities — convert to pseudo-logits for CE loss
+            logit_like = torch.log(out + 1e-9)
+            if mask_confidence:
+                loss = criterion(logit_like, target) + 0.1 * x.pow(2).sum()
+            else:
+                loss = criterion(logit_like, target) + 0.01 * x.pow(2).sum()
         else:
-            loss = criterion(logits, target) + 0.01 * x.pow(2).sum()
+            if mask_confidence:
+                loss = criterion(out, target) + 0.1 * x.pow(2).sum()
+            else:
+                loss = criterion(out, target) + 0.01 * x.pow(2).sum()
+
         loss.backward()
         optimizer.step()
         if step % 100 == 0:
             loss_history.append(round(float(loss.item()), 5))
 
-    confidence = float(torch.softmax(model(x), dim=1)[0, target_class].item())
+    # Measure confidence from the model's actual output
+    with torch.no_grad():
+        final_out = model(x)
+    if final_out.min() >= 0 and final_out.max() <= 1 and abs(final_out.sum().item() - 1.0) < 0.05:
+        confidence = float(final_out[0, target_class].item())
+    else:
+        confidence = float(torch.softmax(final_out, dim=1)[0, target_class].item())
+
     return x.detach().numpy().flatten(), confidence, loss_history
 
 
@@ -131,83 +183,131 @@ def l2_dist(a, b):
     return float(np.linalg.norm(np.array(a) - np.array(b)))
 
 
+def run_mode(model, mode_label, num_classes, class_names, input_dim, centroids,
+             steps, lr, mask_confidence, out_path):
+    print(f"\n--- {mode_label} ---")
+    results = []
+    for cls in range(num_classes):
+        name = class_names[cls] if cls < len(class_names) else f"class_{cls}"
+        print(f"\n  Inverting class {cls} ({name})...")
+        recon, confidence, loss_hist = invert_class(
+            model, cls, input_dim, steps=steps, lr=lr,
+            mask_confidence=mask_confidence,
+        )
+        centroid = centroids.get(cls, np.zeros(input_dim))
+        cos_sim  = cosine_sim(recon, centroid)
+        l2       = l2_dist(recon, centroid)
+        risk     = "HIGH" if cos_sim > 0.7 else "MEDIUM" if cos_sim > 0.4 else "LOW"
+
+        print(f"    Confidence : {confidence:.4f}")
+        print(f"    Cosine sim : {cos_sim:.4f}")
+        print(f"    L2 dist    : {l2:.4f}")
+        print(f"    Risk       : {risk}")
+
+        results.append({
+            "class_id":            cls,
+            "class_name":          name,
+            "model_confidence":    round(confidence, 6),
+            "cosine_similarity":   round(cos_sim, 6),
+            "l2_distance":         round(l2, 6),
+            "loss_history":        loss_hist,
+            "risk_level":          risk,
+            "reconstructed_input": recon.tolist(),
+        })
+
+    avg_cos   = np.mean([r["cosine_similarity"] for r in results])
+    avg_conf  = np.mean([r["model_confidence"]  for r in results])
+    high_risk = sum(1 for r in results if r["risk_level"] == "HIGH")
+
+    summary = {
+        "avg_cosine_similarity": round(float(avg_cos), 6),
+        "avg_model_confidence":  round(float(avg_conf), 6),
+        "high_risk_classes":     high_risk,
+        "verdict": (
+            "VULNERABLE — model leaks class-level feature structure"
+            if avg_cos > 0.5 else
+            "MODERATE — partial class structure leakage"
+            if avg_cos > 0.3 else
+            "RESISTANT — reconstructed inputs do not match real data"
+        ),
+    }
+
+    output = {"attack": "model_inversion", "mode": mode_label,
+              "results": results, "summary": summary}
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2)
+
+    print(f"\n  Avg cosine similarity : {avg_cos:.4f}")
+    print(f"  Avg model confidence  : {avg_conf:.4f}")
+    print(f"  High-risk classes     : {high_risk}/{num_classes}")
+    print(f"  Verdict : {summary['verdict']}")
+    print(f"  Saved → {out_path}")
+    return summary
+
+
 def main(model_path: str = MODEL_PATH, label_col: str = LABEL_COL,
          lr: float = DEFAULT_LR, steps: int = DEFAULT_STEPS,
-         out_path: str = OUT_PATH):
+         out_path: str = OUT_PATH,
+         noise_scale: float = MI_NOISE_SCALE,
+         temperature: float = MI_TEMPERATURE):
+
     print("=" * 55)
     print("Attack 1: Model Inversion")
     print("=" * 55)
 
-    meta = load_meta(label_col=label_col)
+    meta        = load_meta(label_col=label_col)
     input_dim   = meta["input_dim"]
     num_classes = meta["num_classes"]
     class_names = meta["class_names"]
 
-    model = load_model(input_dim, num_classes, model_path=model_path)
-    X, y  = load_all_data(input_dim, label_col=label_col)
-    centroids = class_centroids(X, y, num_classes)
+    bare_model = load_model(input_dim, num_classes, model_path=model_path)
+    X, y       = load_all_data(input_dim, label_col=label_col)
+    centroids  = class_centroids(X, y, num_classes)
 
-    for mode, mask in [("unmitigated", False), ("mitigated (confidence masked)", True)]:
-        print(f"\n--- {mode} ---")
-        results = []
-        for cls in range(num_classes):
-            name = class_names[cls] if cls < len(class_names) else f"class_{cls}"
-            print(f"\n  Inverting class {cls} ({name})...")
-            recon, confidence, loss_hist = invert_class(
-                model, cls, input_dim, steps=steps, lr=lr,
-                mask_confidence=mask
-            )
-            centroid = centroids.get(cls, np.zeros(input_dim))
-            cos_sim  = cosine_sim(recon, centroid)
-            l2       = l2_dist(recon, centroid)
-            risk     = "HIGH" if cos_sim > 0.7 else "MEDIUM" if cos_sim > 0.4 else "LOW"
+    # ── Mode 1: unmitigated ───────────────────────────────────────────────────
+    run_mode(
+        model=bare_model,
+        mode_label="unmitigated",
+        num_classes=num_classes,
+        class_names=class_names,
+        input_dim=input_dim,
+        centroids=centroids,
+        steps=steps, lr=lr,
+        mask_confidence=False,
+        out_path=out_path,
+    )
 
-            print(f"    Confidence : {confidence:.4f}")
-            print(f"    Cosine sim : {cos_sim:.4f}")
-            print(f"    L2 dist    : {l2:.4f}")
-            print(f"    Risk       : {risk}")
+    # ── Mode 2: legacy confidence masking (kept for comparison) ───────────────
+    run_mode(
+        model=bare_model,
+        mode_label="mitigated (confidence masked)",
+        num_classes=num_classes,
+        class_names=class_names,
+        input_dim=input_dim,
+        centroids=centroids,
+        steps=steps, lr=lr,
+        mask_confidence=True,
+        out_path=out_path.replace(".json", "_mitigated.json"),
+    )
 
-            results.append({
-                "class_id":           cls,
-                "class_name":         name,
-                "model_confidence":   round(confidence, 6),
-                "cosine_similarity":  round(cos_sim, 6),
-                "l2_distance":        round(l2, 6),
-                "loss_history":       loss_hist,
-                "risk_level":         risk,
-                "reconstructed_input": recon.tolist(),
-            })
-
-        avg_cos   = np.mean([r["cosine_similarity"] for r in results])
-        avg_conf  = np.mean([r["model_confidence"] for r in results])
-        high_risk = sum(1 for r in results if r["risk_level"] == "HIGH")
-
-        summary = {
-            "avg_cosine_similarity": round(float(avg_cos), 6),
-            "avg_model_confidence":  round(float(avg_conf), 6),
-            "high_risk_classes":     high_risk,
-            "verdict": (
-                "VULNERABLE — model leaks class-level feature structure"
-                if avg_cos > 0.5 else
-                "MODERATE — partial class structure leakage"
-                if avg_cos > 0.3 else
-                "RESISTANT — reconstructed inputs do not match real data"
-            ),
-        }
-
-        suffix = "_mitigated" if mask else ""
-        out = out_path.replace(".json", f"{suffix}.json")
-        output = {"attack": "model_inversion", "mode": mode,
-                  "results": results, "summary": summary}
-        os.makedirs(os.path.dirname(out), exist_ok=True)
-        with open(out, "w", encoding="utf-8") as f:
-            json.dump(output, f, indent=2)
-
-        print(f"\n  Avg cosine similarity : {avg_cos:.4f}")
-        print(f"  Avg model confidence  : {avg_conf:.4f}")
-        print(f"  High-risk classes     : {high_risk}/{num_classes}")
-        print(f"  Verdict : {summary['verdict']}")
-        print(f"  Saved → {out}")
+    # ── Mode 3: PrivacyWrapper (new defence) ──────────────────────────────────
+    print(f"\n  [Defence params] noise_scale={noise_scale}  temperature={temperature}")
+    defended_model = load_defended(
+        input_dim, num_classes, model_path=model_path,
+        noise_scale=noise_scale, temperature=temperature,
+    )
+    run_mode(
+        model=defended_model,
+        mode_label=f"defended (noise={noise_scale}, temp={temperature})",
+        num_classes=num_classes,
+        class_names=class_names,
+        input_dim=input_dim,
+        centroids=centroids,
+        steps=steps, lr=lr,
+        mask_confidence=False,
+        out_path=out_path.replace(".json", "_defended.json"),
+    )
 
 
 if __name__ == "__main__":
@@ -216,16 +316,15 @@ if __name__ == "__main__":
         description="Model Inversion Attack against a trained FL model.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--model-path", default=MODEL_PATH,
-                        help="Path to the trained model .pth file.")
-    parser.add_argument("--label-col",  default=LABEL_COL,
-                        help="Name of the label column in client CSVs.")
-    parser.add_argument("--lr",         type=float, default=DEFAULT_LR,
-                        help="Optimisation learning rate for input reconstruction.")
-    parser.add_argument("--steps",      type=int,   default=DEFAULT_STEPS,
-                        help="Number of gradient steps per class inversion.")
-    parser.add_argument("--out",        default=OUT_PATH,
-                        help="Output JSON path (suffix _mitigated.json also written).")
+    parser.add_argument("--model-path",   default=MODEL_PATH)
+    parser.add_argument("--label-col",    default=LABEL_COL)
+    parser.add_argument("--lr",           type=float, default=DEFAULT_LR)
+    parser.add_argument("--steps",        type=int,   default=DEFAULT_STEPS)
+    parser.add_argument("--out",          default=OUT_PATH)
+    parser.add_argument("--noise-scale",  type=float, default=MI_NOISE_SCALE,
+                        help="Laplace noise scale for PrivacyWrapper defence.")
+    parser.add_argument("--temperature",  type=float, default=MI_TEMPERATURE,
+                        help="Softmax temperature for PrivacyWrapper defence.")
     args = parser.parse_args()
     main(
         model_path=args.model_path,
@@ -233,4 +332,6 @@ if __name__ == "__main__":
         lr=args.lr,
         steps=args.steps,
         out_path=args.out,
+        noise_scale=args.noise_scale,
+        temperature=args.temperature,
     )
