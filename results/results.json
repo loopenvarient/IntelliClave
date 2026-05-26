@@ -1,17 +1,35 @@
 {
   "rounds": [
-    {"round": 1, "macro_f1": 0.4848,  "accuracy": 0.54488, "epsilon": 4.98246},
-    {"round": 2, "macro_f1": 0.80271, "accuracy": 0.80786, "epsilon": 6.54784},
-    {"round": 3, "macro_f1": 0.84072, "accuracy": 0.84813, "epsilon": 7.82626},
-    {"round": 4, "macro_f1": 0.85522, "accuracy": 0.86172, "epsilon": 8.95650},
-    {"round": 5, "macro_f1": 0.90019, "accuracy": 0.90102, "epsilon": 9.99199}
+    {
+      "round": 1,
+      "loss": 1.71594,
+      "accuracy": 0.45318,
+      "macro_f1": 0.35275
+    },
+    {
+      "round": 2,
+      "loss": 1.53661,
+      "accuracy": 0.60311,
+      "macro_f1": 0.52801
+    },
+    {
+      "round": 3,
+      "loss": 1.22036,
+      "accuracy": 0.79088,
+      "macro_f1": 0.77566
+    },
+    {
+      "round": 4,
+      "loss": 0.82531,
+      "accuracy": 0.86414,
+      "macro_f1": 0.86063
+    },
+    {
+      "round": 5,
+      "loss": 0.50689,
+      "accuracy": 0.89859,
+      "macro_f1": 0.8983
+    }
   ],
-  "per_class_f1": {
-    "WALKING":            0.9943,
-    "WALKING_UPSTAIRS":   0.9883,
-    "WALKING_DOWNSTAIRS": 0.9886,
-    "SITTING":            0.9245,
-    "STANDING":           0.9301,
-    "LAYING":             1.0000
-  }
+  "save_dir": "results/fl_rounds\\run_20260519_181741"
 }

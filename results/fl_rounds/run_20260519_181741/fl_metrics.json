@@ -1,0 +1,32 @@
+[
+  {
+    "round": 1,
+    "loss": 1.71594,
+    "accuracy": 0.45318,
+    "macro_f1": 0.35275
+  },
+  {
+    "round": 2,
+    "loss": 1.53661,
+    "accuracy": 0.60311,
+    "macro_f1": 0.52801
+  },
+  {
+    "round": 3,
+    "loss": 1.22036,
+    "accuracy": 0.79088,
+    "macro_f1": 0.77566
+  },
+  {
+    "round": 4,
+    "loss": 0.82531,
+    "accuracy": 0.86414,
+    "macro_f1": 0.86063
+  },
+  {
+    "round": 5,
+    "loss": 0.50689,
+    "accuracy": 0.89859,
+    "macro_f1": 0.8983
+  }
+]

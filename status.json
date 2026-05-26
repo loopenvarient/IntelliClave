@@ -1,14 +1,11 @@
 {
   "round": 5,
-  "total_rounds": 20,
-  "epsilon": 9.992,
-  "delta": 3.65e-4,
-  "macro_f1": 0.900,
-  "accuracy": 0.901,
-  "clients": [
-    {"id": "FitLife",   "status": "ready", "samples": 3105},
-    {"id": "MediTrack", "status": "ready", "samples": 3426},
-    {"id": "CareWatch", "status": "ready", "samples": 3768}
-  ],
-  "training_active": false
+  "total_rounds": 5,
+  "clients": 3,
+  "loss": 0.50689,
+  "accuracy": 0.89859,
+  "macro_f1": 0.8983,
+  "save_dir": "results/fl_rounds\\run_20260519_181741",
+  "model_type": "mlp",
+  "early_stopped": false
 }

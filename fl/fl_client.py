@@ -242,6 +242,8 @@ def start_client(
     client_id: str,
     server_address: str = "127.0.0.1:8080",
     model_type: str = "mlp",
+    local_epochs: int = 3,          # ← ADD THIS
+    learning_rate: float = 1e-3,    # ← ADD THIS
     use_dp: bool = False,
     target_epsilon: float = 10.0,
     max_grad_norm: float = 1.0,
@@ -255,6 +257,8 @@ def start_client(
             csv_path=csv_path,
             client_id=client_id,
             model_type=model_type,
+            local_epochs=local_epochs,      # ← ADD THIS
+            learning_rate=learning_rate,    # ← ADD THIS
             use_dp=use_dp,
             target_epsilon=target_epsilon,
             max_grad_norm=max_grad_norm,
