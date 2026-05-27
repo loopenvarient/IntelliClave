@@ -15,7 +15,7 @@ version: "3.9"
 #   N_CLIENTS  : number of FL clients (used by generate_compose.py, default 3)
 #   USE_CRYPTO : "--crypto" (default) | ""
 #   USE_DP     : "--dp" (default) | ""
-#   EPSILON    : DP budget target (default 10.0)
+#   EPSILON    : DP budget target (default 1.0)
 #   ROUNDS     : FL rounds — must be same for server and all clients (default 10)
 #   STRATEGY   : fedavg | fedprox (default fedavg)
 #   FRACTION_FIT: fraction of clients per round (default 1.0)
@@ -74,7 +74,7 @@ services:
       SERVER_ADDR: "fl-server:8080"
       USE_CRYPTO:  "${USE_CRYPTO:---crypto}"
       USE_DP:      "${USE_DP:---dp}"
-      EPSILON:     "${EPSILON:-10.0}"
+      EPSILON:     "${EPSILON:-1.0}"
       ROUNDS:      "${ROUNDS:-10}"
       MODEL_TYPE:  "${MODEL_TYPE:-mlp}"
 

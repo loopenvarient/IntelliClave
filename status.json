@@ -1,12 +1,12 @@
 {
-  "round": 10,
-  "total_rounds": 10,
+  "round": 15,
+  "total_rounds": 15,
   "clients": 3,
-  "loss": 1.15161,
-  "accuracy": 0.65066,
-  "macro_f1": 0.63978,
-  "save_dir": "results/fl_rounds\\run_20260525_110133",
+  "loss": 1.43261,
+  "accuracy": 0.57108,
+  "macro_f1": 0.50762,
+  "save_dir": "results\\fl_rounds\\run_privacy_eps1_r15",
   "model_type": "mlp",
   "early_stopped": false,
-  "epsilon": 1.49798
+  "epsilon": 0.23623
 }

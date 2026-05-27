@@ -62,7 +62,7 @@ spec:
           - fl-server-service:8080
           - --dp
           - --epsilon
-          - "10.0"
+          - "1.0"
           - --rounds
           - "5"
           - --crypto
@@ -171,7 +171,7 @@ spec:
           - fl-server-service:8080
           - --dp
           - --epsilon
-          - "10.0"
+          - "1.0"
           - --rounds
           - "5"
           - --crypto
@@ -280,7 +280,7 @@ spec:
           - fl-server-service:8080
           - --dp
           - --epsilon
-          - "10.0"
+          - "1.0"
           - --rounds
           - "5"
           - --crypto

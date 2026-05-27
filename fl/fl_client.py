@@ -11,22 +11,20 @@ from typing import Dict, List, Optional, Tuple
 import flwr as fl
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.optim as optim
 
 _HERE = os.path.dirname(__file__)
 _ROOT = os.path.abspath(os.path.join(_HERE, ".."))
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, _HERE)
-from config.constants import DEFAULT_EPSILON  # noqa: E402
+from config.constants import DEFAULT_EPSILON, WEIGHT_DECAY  # noqa: E402
 from data_utils import (  # noqa: E402
     global_norm_arrays_from_config,
-    load_class_weights,
     load_csv_data,
     load_global_normalization_file,
 )
 from model import get_model  # noqa: E402
-from train_local import evaluate, train_one_epoch  # noqa: E402
+from train_local import build_criterion, evaluate, train_one_epoch  # noqa: E402
 
 # ── Crypto layer import ───────────────────────────────────────────────────────
 _CRYPTO_DIR = os.path.join(os.path.dirname(__file__), "..", "crypto", "certs")
@@ -51,6 +49,7 @@ class IntelliClaveClient(fl.client.NumPyClient):
         local_epochs: int = 3,
         learning_rate: float = 1e-3,
         batch_size: int = 32,
+        weight_decay: float = WEIGHT_DECAY,
         model_type: str = "mlp",
         # ── DP parameters — all optional, default = DP off ───────────────────────
         use_dp: bool = False,
@@ -68,6 +67,7 @@ class IntelliClaveClient(fl.client.NumPyClient):
         self.cid = client_id
         self.local_epochs = local_epochs
         self._learning_rate = learning_rate
+        self._weight_decay = weight_decay
         self._csv_path = csv_path
         self._batch_size = batch_size
         self._drop_last_for_dp = use_dp
@@ -124,11 +124,16 @@ class IntelliClaveClient(fl.client.NumPyClient):
             self.metadata.num_classes,
             model_type=self._model_type,
         ).to(self.device)
-        class_weights = load_class_weights(
-            num_classes=self.metadata.num_classes, device=self.device
+        self.criterion = build_criterion(
+            self.device,
+            num_classes=self.metadata.num_classes,
+            use_class_weights=True,
         )
-        self.criterion = nn.CrossEntropyLoss(weight=class_weights)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self._learning_rate)
+        self.optimizer = optim.Adam(
+            self.model.parameters(),
+            lr=self._learning_rate,
+            weight_decay=self._weight_decay,
+        )
 
         if self.use_dp:
             self._attach_privacy_engine()
@@ -301,6 +306,7 @@ def start_client(
     model_type: str = "mlp",
     local_epochs: int = 3,
     learning_rate: float = 1e-3,
+    weight_decay: float = WEIGHT_DECAY,
     use_dp: bool = False,
     target_epsilon: float = DEFAULT_EPSILON,
     max_grad_norm: float = 0.3,
@@ -323,6 +329,7 @@ def start_client(
             client_id=client_id,
             local_epochs=local_epochs,
             learning_rate=learning_rate,
+            weight_decay=weight_decay,
             model_type=model_type,
             use_dp=use_dp,
             target_epsilon=target_epsilon,
@@ -349,8 +356,9 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=32,
                         help="DataLoader batch size (default: 32).")
     parser.add_argument("--dp", action="store_true", help="Enable Differential Privacy via Opacus.")
-    parser.add_argument("--epsilon", type=float, default=10.0, help="Target epsilon (privacy budget). Default=10.0.")
-    parser.add_argument("--max-grad-norm", type=float, default=1.0, help="Gradient clipping norm for DP-SGD. Default=1.0.")
+    parser.add_argument("--epsilon", type=float, default=DEFAULT_EPSILON, help="Target epsilon (privacy budget). Default=1.0.")
+    parser.add_argument("--max-grad-norm", type=float, default=0.3, help="Gradient clipping norm for DP-SGD. Default=0.3.")
+    parser.add_argument("--weight-decay", type=float, default=WEIGHT_DECAY, help="Adam weight decay for regularization.")
     parser.add_argument("--model-type", default="mlp",
                         choices=["mlp", "resnet-tabular", "transformer-tabular"],
                         help="Model architecture (default: mlp).")
@@ -383,6 +391,7 @@ if __name__ == "__main__":
         model_type=args.model_type,
         local_epochs=args.local_epochs,
         learning_rate=args.lr,
+        weight_decay=args.weight_decay,
         batch_size=args.batch_size,
         use_dp=args.dp,
         target_epsilon=args.epsilon,

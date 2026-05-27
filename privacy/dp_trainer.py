@@ -7,13 +7,20 @@ import torch.nn as nn
 from opacus import PrivacyEngine
 from opacus.validators import ModuleValidator
 
+try:
+    from config.constants import CONFIDENCE_PENALTY, DEFAULT_EPSILON, LABEL_SMOOTHING
+except ImportError:
+    CONFIDENCE_PENALTY = 0.03
+    DEFAULT_EPSILON = 1.0
+    LABEL_SMOOTHING = 0.15
+
 
 class DPTrainer:
-    def __init__(self, model, target_epsilon=10.0, target_delta=None,
-                 max_grad_norm=1.0, epochs=3, num_classes=None, lr=1e-3):
+    def __init__(self, model, target_epsilon=DEFAULT_EPSILON, target_delta=None,
+                 max_grad_norm=0.3, epochs=3, num_classes=None, lr=1e-3):
         """
         model          : any nn.Module — passed in, not defined here
-        target_epsilon : privacy budget (default 10.0)
+        target_epsilon : privacy budget (default 1.0)
         target_delta   : set per-client based on their row count (1/n)
         max_grad_norm  : gradient clipping threshold
         epochs         : local epochs per FL round
@@ -34,7 +41,10 @@ class DPTrainer:
 
         # Load class weights generically (integer-keyed JSON)
         weights = self._load_class_weights(num_classes)
-        self.criterion = nn.CrossEntropyLoss(weight=weights)
+        self.criterion = nn.CrossEntropyLoss(
+            weight=weights,
+            label_smoothing=LABEL_SMOOTHING,
+        )
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.privacy_engine = PrivacyEngine()
         self._attached = False
@@ -87,6 +97,10 @@ class DPTrainer:
             self.optimizer.zero_grad()
             output = self.model(X_batch)
             loss   = self.criterion(output, y_batch)
+            if CONFIDENCE_PENALTY > 0:
+                probs = torch.softmax(output, dim=1)
+                entropy = -(probs * torch.log(probs + 1e-8)).sum(dim=1).mean()
+                loss = loss - CONFIDENCE_PENALTY * entropy
             loss.backward()
             self.optimizer.step()
             total_loss += loss.item()

@@ -33,7 +33,7 @@ spec:
         - name: USE_DP
           value: "--dp"
         - name: EPSILON
-          value: "10.0"
+          value: "1.0"
         - name: ROUNDS
           value: "20"
         resources:

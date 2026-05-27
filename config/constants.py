@@ -7,7 +7,8 @@ Import these instead of repeating magic numbers across scripts:
 """
 
 # ── Privacy ───────────────────────────────────────────────────────────────────
-DEFAULT_EPSILON: float = 1.0   # DP privacy budget (ε)
+DEFAULT_EPSILON: float = 1.0   # balanced DP budget: resistant MI results with better utility
+HIGH_PRIVACY_EPSILON: float = 0.5   # stronger privacy, lower utility
 DEFAULT_DELTA_FALLBACK: float = 1e-5  # used only when row count is unavailable
 
 # ── Federated Learning ────────────────────────────────────────────────────────
@@ -48,7 +49,8 @@ OUTPUT_RANDOM_RESPONSE_PROB: float = 0.1
 # or when running the attack scripts themselves in unmitigated mode).
 MI_DEFENCE_ENABLED: bool = True
 
-FEATURE_NOISE_STD = 0.15
-DROPOUT_RATE = 0.5
-LABEL_SMOOTHING = 0.1
-CONFIDENCE_PENALTY = 0.01
+FEATURE_NOISE_STD = 0.2
+DROPOUT_RATE = 0.6
+LABEL_SMOOTHING = 0.15
+CONFIDENCE_PENALTY = 0.03
+WEIGHT_DECAY = 1e-4

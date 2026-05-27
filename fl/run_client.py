@@ -8,6 +8,7 @@ sys.path.insert(0, _ROOT)
 sys.path.insert(0, _HERE)
 from data_utils import get_default_client_csvs  # noqa: E402
 from fl_client import start_client  # noqa: E402
+from config.constants import DEFAULT_EPSILON, WEIGHT_DECAY  # noqa: E402
 
 # ── Attestation import ────────────────────────────────────────────────────────
 _TEE_DIR = os.path.join(os.path.dirname(__file__), "..", "tee", "attestation")
@@ -43,8 +44,12 @@ if __name__ == "__main__":
                         help="DataLoader batch size (default: 32).")
     parser.add_argument("--dp", action="store_true",
                         help="Enable Differential Privacy via Opacus.")
-    parser.add_argument("--epsilon", type=float, default=1.5,
-                        help="DP target epsilon. Default=1.5.")
+    parser.add_argument("--epsilon", type=float, default=DEFAULT_EPSILON,
+                        help="DP target epsilon. Default=1.0.")
+    parser.add_argument("--max-grad-norm", type=float, default=0.3,
+                        help="Gradient clipping norm for DP-SGD. Default=0.3.")
+    parser.add_argument("--weight-decay", type=float, default=WEIGHT_DECAY,
+                        help="Adam weight decay for regularization.")
     parser.add_argument("--rounds", type=int, default=10,
                         help="Total FL rounds — must match server --rounds.")
     parser.add_argument("--attest", action="store_true",
@@ -99,11 +104,13 @@ if __name__ == "__main__":
         model_type=args.model_type,
         local_epochs=args.local_epochs,
         learning_rate=args.lr,
+        weight_decay=args.weight_decay,
         batch_size=args.batch_size,
         use_crypto=args.crypto,
         server_public_key_pem=server_public_key_pem,
         use_dp=args.dp,
         target_epsilon=args.epsilon,
+        max_grad_norm=args.max_grad_norm,
         num_fl_rounds=args.rounds,
         norm_config_path=args.norm_config,
     )

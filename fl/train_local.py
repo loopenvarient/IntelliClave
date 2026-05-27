@@ -279,14 +279,14 @@ if __name__ == "__main__":
                         help="Disable class weights even if data/class_weights.json exists.")
     parser.add_argument("--dp", action="store_true",
                         help="Enable Differential Privacy training via Opacus.")
-    parser.add_argument("--epsilon", type=float, default=1.5,
+    parser.add_argument("--epsilon", type=float, default=DEFAULT_EPSILON,
                         help="Target epsilon (privacy budget). Default=1.0.")
     parser.add_argument("--max-grad-norm", type=float, default=0.3,
                         help="Gradient clipping threshold for DP-SGD. Default=0.3.")
     parser.add_argument("--weight-decay", type=float, default=1e-4,
                         help="Adam weight decay for regularization. Default=1e-4.")
     parser.add_argument("--confidence-penalty", type=float, default=CONFIDENCE_PENALTY,
-                        help="Entropy regularization strength. Default=0.01.")
+                        help="Entropy regularization strength. Default=0.03.")
     parser.add_argument("--early-stopping-patience", type=int, default=3,
                         help="Stop local retraining after N stagnant epochs. Default=3.")
     parser.add_argument("--early-stopping-metric", default="macro_f1",

@@ -20,6 +20,11 @@ import torch.nn as nn
 from .data_loader import load_client_data
 from .dp_trainer import DPTrainer
 
+try:
+    from config.constants import DEFAULT_EPSILON
+except ImportError:
+    DEFAULT_EPSILON = 1.0
+
 # Optional: apply server global normalization (same contract as fl_client)
 _FL_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "fl"))
 if _FL_DIR not in sys.path:
@@ -40,8 +45,8 @@ class DPFlowerClient(fl.client.NumPyClient):
         csv_path: str,
         local_epochs: int = 3,
         num_fl_rounds: int = 5,
-        target_epsilon: float = 10.0,
-        max_grad_norm: float = 1.0,
+        target_epsilon: float = DEFAULT_EPSILON,
+        max_grad_norm: float = 0.3,
         batch_size: int = 64,
         learning_rate: float = 1e-3,
         global_mean: Optional[torch.Tensor] = None,
@@ -216,8 +221,8 @@ def start_dp_client(
     server_address: str = "127.0.0.1:8080",
     local_epochs: int = 3,
     num_fl_rounds: int = 10,
-    target_epsilon: float = 10.0,
-    max_grad_norm: float = 1.0,
+    target_epsilon: float = DEFAULT_EPSILON,
+    max_grad_norm: float = 0.3,
     batch_size: int = 64,
     learning_rate: float = 1e-3,
 ) -> None:
@@ -252,7 +257,7 @@ if __name__ == "__main__":
     parser.add_argument("--server", default="127.0.0.1:8080")
     parser.add_argument("--rounds", type=int, default=10)
     parser.add_argument("--local-epochs", type=int, default=3)
-    parser.add_argument("--epsilon", type=float, default=10.0)
+    parser.add_argument("--epsilon", type=float, default=DEFAULT_EPSILON)
     args = parser.parse_args()
 
     idx = int(args.id) - 1

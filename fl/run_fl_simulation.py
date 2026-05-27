@@ -17,14 +17,12 @@ from typing import Optional
 import flwr as fl
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.optim as optim
 
 sys.path.insert(0, os.path.dirname(__file__))
 from data_utils import (  # noqa: E402
     get_default_client_csvs,
     infer_csv_schema,
-    load_class_weights,
     load_csv_data,
     persist_run_preprocessing,
     validate_client_schemas,
@@ -37,7 +35,8 @@ from fl_server import (  # noqa: E402
     monitor_client_distributions,
 )
 from model import get_model  # noqa: E402
-from train_local import evaluate, train_one_epoch  # noqa: E402
+from config.constants import DEFAULT_EPSILON, HIGH_PRIVACY_EPSILON, WEIGHT_DECAY  # noqa: E402
+from train_local import build_criterion, evaluate, train_one_epoch  # noqa: E402
 
 
 NUM_ROUNDS  = 10
@@ -53,9 +52,10 @@ class SimClient(fl.client.NumPyClient):
         learning_rate: float,
         model_type: str = "mlp",
         batch_size: int = 32,
+        weight_decay: float = WEIGHT_DECAY,
         use_dp: bool = False,
-        target_epsilon: float = 1.5,
-        max_grad_norm: float = 0.5,
+        target_epsilon: float = DEFAULT_EPSILON,
+        max_grad_norm: float = 0.3,
         num_fl_rounds: int = NUM_ROUNDS,
         global_mean: Optional[np.ndarray] = None,
         global_std: Optional[np.ndarray] = None,
@@ -66,6 +66,7 @@ class SimClient(fl.client.NumPyClient):
         self.use_dp       = use_dp
         self.target_epsilon = target_epsilon
         self.max_grad_norm = max_grad_norm
+        self.weight_decay = weight_decay
         self.num_fl_rounds = num_fl_rounds
         self.privacy_engine = None
 
@@ -81,11 +82,16 @@ class SimClient(fl.client.NumPyClient):
             self.metadata.num_classes,
             model_type=model_type,
         ).to(self.device)
-        class_weights = load_class_weights(
-            num_classes=self.metadata.num_classes, device=self.device
+        self.criterion = build_criterion(
+            self.device,
+            num_classes=self.metadata.num_classes,
+            use_class_weights=True,
         )
-        self.criterion = nn.CrossEntropyLoss(weight=class_weights)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
+        self.optimizer = optim.Adam(
+            self.model.parameters(),
+            lr=learning_rate,
+            weight_decay=weight_decay,
+        )
         self.target_delta = 1.0 / self.metadata.train_size
 
         if self.use_dp:
@@ -189,6 +195,7 @@ def main(
     local_epochs: int = 1,
     learning_rate: float = 1e-3,
     batch_size: int = 32,
+    weight_decay: float = WEIGHT_DECAY,
     save_dir: str = "",
     fraction_fit: float = 1.0,
     strategy_name: str = "fedavg",
@@ -198,8 +205,8 @@ def main(
     early_stopping_metric: str = "loss",
     monitor_distributions: bool = True,
     use_dp: bool = False,
-    target_epsilon: float = 1.5,
-    max_grad_norm: float = 0.5,
+    target_epsilon: float = DEFAULT_EPSILON,
+    max_grad_norm: float = 0.3,
 ):
     # Auto-generate timestamped save dir
     if not save_dir:
@@ -252,6 +259,7 @@ def main(
             learning_rate=learning_rate,
             model_type=model_type,
             batch_size=batch_size,
+            weight_decay=weight_decay,
             use_dp=use_dp,
             target_epsilon=target_epsilon,
             max_grad_norm=max_grad_norm,
@@ -348,6 +356,8 @@ if __name__ == "__main__":
                         help="Learning rate.")
     parser.add_argument("--batch-size",  type=int,   default=32,
                         help="DataLoader batch size.")
+    parser.add_argument("--weight-decay", type=float, default=WEIGHT_DECAY,
+                        help="Adam weight decay for regularization.")
     parser.add_argument("--save-dir",    default="",
                         help="Output directory. Auto-generates timestamped path if not set.")
     parser.add_argument("--fraction-fit",type=float, default=1.0,
@@ -367,19 +377,32 @@ if __name__ == "__main__":
                         help="Metric to monitor for early stopping.")
     parser.add_argument("--dp", action="store_true",
                         help="Enable Differential Privacy via Opacus.")
-    parser.add_argument("--epsilon", type=float, default=1.5,
+    parser.add_argument("--epsilon", type=float, default=DEFAULT_EPSILON,
                         help="Target epsilon (privacy budget) when --dp is enabled.")
-    parser.add_argument("--max-grad-norm", type=float, default=0.5,
+    parser.add_argument("--max-grad-norm", type=float, default=0.3,
                         help="Gradient clipping norm for DP-SGD.")
+    parser.add_argument("--privacy-mode", choices=["standard", "balanced", "high"], default="standard",
+                        help="Use 'balanced' for eps=1.0 or 'high' for eps=0.5; both enable DP and conservative local training.")
     parser.add_argument("--no-distribution-monitor", action="store_true",
                         help="Skip the pre-training distribution report.")
     args = parser.parse_args()
+    if args.privacy_mode in ("balanced", "high"):
+        args.dp = True
+        args.epsilon = DEFAULT_EPSILON if args.privacy_mode == "balanced" else HIGH_PRIVACY_EPSILON
+        args.max_grad_norm = min(args.max_grad_norm, 0.3)
+        args.local_epochs = 1
+        if args.early_stopping_patience == 0:
+            args.early_stopping_patience = 2
+        if args.early_stopping_metric == "loss":
+            args.early_stopping_metric = "macro_f1"
+
     main(
         num_rounds=args.rounds,
         num_clients=args.clients,
         local_epochs=args.local_epochs,
         learning_rate=args.lr,
         batch_size=args.batch_size,
+        weight_decay=args.weight_decay,
         save_dir=args.save_dir,
         fraction_fit=args.fraction_fit,
         strategy_name=args.strategy,

@@ -1,0 +1,13 @@
+{
+  "input_dim": 50,
+  "num_classes": 6,
+  "class_names": [
+    "class_0",
+    "class_1",
+    "class_2",
+    "class_3",
+    "class_4",
+    "class_5"
+  ],
+  "model_type": "resnet-tabular"
+}

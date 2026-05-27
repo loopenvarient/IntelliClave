@@ -9,7 +9,7 @@
 #     -e SERVER_ADDR=fl-server:8080 \
 #     -e CSV_PATH=/app/data/processed/client1.csv \
 #     -e USE_DP=--dp \
-#     -e EPSILON=10.0 \
+#     -e EPSILON=1.0 \
 #     -e ROUNDS=10 \
 #     -v $(pwd)/data/processed/client1.csv:/app/data/processed/client1.csv:ro \
 #     intelliclave-client:latest
@@ -47,7 +47,7 @@ COPY data/class_weights.json     ./data/class_weights.json
 # CSV_PATH   : mounted at runtime via volume
 # USE_CRYPTO : "--crypto" to enable AES-256-GCM weight encryption, "" to disable
 # USE_DP     : "--dp" to enable DP-SGD, "" to disable
-# EPSILON    : DP privacy budget target (default 10.0)
+# EPSILON    : DP privacy budget target (default 1.0)
 # ROUNDS     : must match server --rounds exactly (Opacus needs total epochs upfront)
 
 ENV CLIENT_ID=1
@@ -55,7 +55,7 @@ ENV SERVER_ADDR=fl-server:8080
 ENV CSV_PATH=/app/data/processed/client1.csv
 ENV USE_CRYPTO=--crypto
 ENV USE_DP=--dp
-ENV EPSILON=10.0
+ENV EPSILON=1.0
 ENV ROUNDS=10
 ENV MODEL_TYPE=mlp
 

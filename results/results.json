@@ -2,64 +2,94 @@
   "rounds": [
     {
       "round": 1,
-      "loss": 1.83548,
-      "accuracy": 0.1902,
-      "macro_f1": 0.1711
+      "loss": 1.8999,
+      "accuracy": 0.17467,
+      "macro_f1": 0.13909
     },
     {
       "round": 2,
-      "loss": 1.74424,
-      "accuracy": 0.25667,
-      "macro_f1": 0.23245
+      "loss": 1.84306,
+      "accuracy": 0.21058,
+      "macro_f1": 0.17228
     },
     {
       "round": 3,
-      "loss": 1.6593,
-      "accuracy": 0.32945,
-      "macro_f1": 0.30618
+      "loss": 1.80361,
+      "accuracy": 0.25085,
+      "macro_f1": 0.20122
     },
     {
       "round": 4,
-      "loss": 1.58893,
-      "accuracy": 0.3935,
-      "macro_f1": 0.37167
+      "loss": 1.75963,
+      "accuracy": 0.29743,
+      "macro_f1": 0.24566
     },
     {
       "round": 5,
-      "loss": 1.52547,
-      "accuracy": 0.44978,
-      "macro_f1": 0.42551
+      "loss": 1.72414,
+      "accuracy": 0.3343,
+      "macro_f1": 0.27368
     },
     {
       "round": 6,
-      "loss": 1.46054,
-      "accuracy": 0.49733,
-      "macro_f1": 0.47236
+      "loss": 1.68688,
+      "accuracy": 0.37361,
+      "macro_f1": 0.30977
     },
     {
       "round": 7,
-      "loss": 1.38739,
-      "accuracy": 0.54148,
-      "macro_f1": 0.52172
+      "loss": 1.65714,
+      "accuracy": 0.40272,
+      "macro_f1": 0.33777
     },
     {
       "round": 8,
-      "loss": 1.31649,
-      "accuracy": 0.57787,
-      "macro_f1": 0.56064
+      "loss": 1.62019,
+      "accuracy": 0.44202,
+      "macro_f1": 0.37152
     },
     {
       "round": 9,
-      "loss": 1.22816,
-      "accuracy": 0.62931,
-      "macro_f1": 0.61722
+      "loss": 1.58412,
+      "accuracy": 0.47307,
+      "macro_f1": 0.40189
     },
     {
       "round": 10,
-      "loss": 1.15161,
-      "accuracy": 0.65066,
-      "macro_f1": 0.63978
+      "loss": 1.55122,
+      "accuracy": 0.49879,
+      "macro_f1": 0.42887
+    },
+    {
+      "round": 11,
+      "loss": 1.5245,
+      "accuracy": 0.5182,
+      "macro_f1": 0.44734
+    },
+    {
+      "round": 12,
+      "loss": 1.49889,
+      "accuracy": 0.53518,
+      "macro_f1": 0.46956
+    },
+    {
+      "round": 13,
+      "loss": 1.47603,
+      "accuracy": 0.54197,
+      "macro_f1": 0.47298
+    },
+    {
+      "round": 14,
+      "loss": 1.45488,
+      "accuracy": 0.55653,
+      "macro_f1": 0.49119
+    },
+    {
+      "round": 15,
+      "loss": 1.43261,
+      "accuracy": 0.57108,
+      "macro_f1": 0.50762
     }
   ],
-  "save_dir": "results/fl_rounds\\run_20260525_110133"
+  "save_dir": "results\\fl_rounds\\run_privacy_eps1_r15"
 }

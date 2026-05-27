@@ -13,7 +13,7 @@ Then run:
 Environment variables honoured at runtime (pass via shell or .env file):
     USE_CRYPTO   : "--crypto" | ""          (default: --crypto)
     USE_DP       : "--dp" | ""              (default: --dp)
-    EPSILON      : float                    (default: 10.0)
+    EPSILON      : float                    (default: 1.0)
     ROUNDS       : int                      (default: 10)
     STRATEGY     : fedavg | fedprox         (default: fedavg)
     FRACTION_FIT : float 0-1                (default: 1.0)
@@ -84,7 +84,7 @@ def generate(n_clients: int, out_path: str):
             '      SERVER_ADDR: "fl-server:8080"',
             '      USE_CRYPTO:  "${USE_CRYPTO:---crypto}"',
             '      USE_DP:      "${USE_DP:---dp}"',
-            '      EPSILON:     "${EPSILON:-10.0}"',
+            '      EPSILON:     "${EPSILON:-1.0}"',
             '      ROUNDS:      "${ROUNDS:-10}"',
             '      MODEL_TYPE:  "${MODEL_TYPE:-mlp}"',
             "",
