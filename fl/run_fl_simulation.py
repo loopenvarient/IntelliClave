@@ -35,7 +35,7 @@ from fl_server import (  # noqa: E402
     monitor_client_distributions,
 )
 from model import get_model  # noqa: E402
-from config.constants import DEFAULT_EPSILON, HIGH_PRIVACY_EPSILON, WEIGHT_DECAY  # noqa: E402
+from config.constants import DEFAULT_EPSILON, HIGH_PRIVACY_EPSILON, MIXUP_ALPHA, WEIGHT_DECAY  # noqa: E402
 from train_local import build_criterion, evaluate, train_one_epoch  # noqa: E402
 
 
@@ -53,6 +53,7 @@ class SimClient(fl.client.NumPyClient):
         model_type: str = "mlp",
         batch_size: int = 32,
         weight_decay: float = WEIGHT_DECAY,
+        mixup_alpha: float = MIXUP_ALPHA,
         use_dp: bool = False,
         target_epsilon: float = DEFAULT_EPSILON,
         max_grad_norm: float = 0.3,
@@ -67,6 +68,7 @@ class SimClient(fl.client.NumPyClient):
         self.target_epsilon = target_epsilon
         self.max_grad_norm = max_grad_norm
         self.weight_decay = weight_decay
+        self.mixup_alpha = mixup_alpha
         self.num_fl_rounds = num_fl_rounds
         self.privacy_engine = None
 
@@ -151,6 +153,7 @@ class SimClient(fl.client.NumPyClient):
             loss = train_one_epoch(
                 self.model, self.train_loader,
                 self.optimizer, self.criterion, self.device,
+                mixup_alpha=self.mixup_alpha,
             )
         # Report validation accuracy (test split), not training accuracy
         accuracy, macro_f1 = evaluate(self.model, self.test_loader, self.device)
@@ -196,6 +199,7 @@ def main(
     learning_rate: float = 1e-3,
     batch_size: int = 32,
     weight_decay: float = WEIGHT_DECAY,
+    mixup_alpha: float = MIXUP_ALPHA,
     save_dir: str = "",
     fraction_fit: float = 1.0,
     strategy_name: str = "fedavg",
@@ -260,6 +264,7 @@ def main(
             model_type=model_type,
             batch_size=batch_size,
             weight_decay=weight_decay,
+            mixup_alpha=mixup_alpha,
             use_dp=use_dp,
             target_epsilon=target_epsilon,
             max_grad_norm=max_grad_norm,
@@ -358,6 +363,8 @@ if __name__ == "__main__":
                         help="DataLoader batch size.")
     parser.add_argument("--weight-decay", type=float, default=WEIGHT_DECAY,
                         help="Adam weight decay for regularization.")
+    parser.add_argument("--mixup-alpha", type=float, default=MIXUP_ALPHA,
+                        help="Mixup alpha. Set 0 to disable.")
     parser.add_argument("--save-dir",    default="",
                         help="Output directory. Auto-generates timestamped path if not set.")
     parser.add_argument("--fraction-fit",type=float, default=1.0,
@@ -403,6 +410,7 @@ if __name__ == "__main__":
         learning_rate=args.lr,
         batch_size=args.batch_size,
         weight_decay=args.weight_decay,
+        mixup_alpha=args.mixup_alpha,
         save_dir=args.save_dir,
         fraction_fit=args.fraction_fit,
         strategy_name=args.strategy,

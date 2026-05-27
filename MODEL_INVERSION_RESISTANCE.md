@@ -26,6 +26,8 @@ Changes made:
 - Kept a stronger high-privacy option at `epsilon=0.5`.
 - Applied label smoothing during federated training.
 - Applied confidence penalty through the shared `train_one_epoch` training path.
+- Added Mixup training (`--mixup-alpha`) to blend examples during training and
+  reduce memorization of class prototypes.
 - Increased dropout and feature noise to reduce memorization.
 - Added Adam weight decay in FL client and simulation training.
 - Updated Docker and Kubernetes DP defaults from weak `epsilon=10.0`/`0.5` to the balanced `epsilon=1.0`.
@@ -41,6 +43,7 @@ DROPOUT_RATE = 0.6
 LABEL_SMOOTHING = 0.15
 CONFIDENCE_PENALTY = 0.03
 WEIGHT_DECAY = 1e-4
+MIXUP_ALPHA = 0.2
 ```
 
 ## Results
@@ -56,6 +59,8 @@ White-box inversion results after hardening:
 
 The selected default is now `epsilon=1.0` because it keeps the tested white-box
 attack resistant while giving much better utility than `epsilon=0.5`.
+The table above records the pre-Mixup balanced run; rerun the Mixup experiment
+below before claiming a new accuracy/security number for Mixup.
 
 Do not claim `epsilon=2.0` is resistant. Its main unmitigated result is
 moderate, and its mitigated/defended runs showed vulnerable leakage.
@@ -75,7 +80,8 @@ pip install -U "flwr[simulation]"
 pip install "numpy<2.0"
 ```
 
-Train the selected balanced secure model:
+Train the selected balanced secure model. Mixup is enabled by default with
+`MIXUP_ALPHA = 0.2`:
 
 ```powershell
 python fl\run_fl_simulation.py --privacy-mode balanced --rounds 10 --clients 3 --save-dir results\fl_rounds\run_privacy_balanced
@@ -84,13 +90,37 @@ python fl\run_fl_simulation.py --privacy-mode balanced --rounds 10 --clients 3 -
 Equivalent explicit command:
 
 ```powershell
-python fl\run_fl_simulation.py --dp --epsilon 1.0 --max-grad-norm 0.3 --rounds 10 --local-epochs 1 --save-dir results\fl_rounds\run_privacy_balanced
+python fl\run_fl_simulation.py --dp --epsilon 1.0 --max-grad-norm 0.3 --rounds 10 --local-epochs 1 --mixup-alpha 0.2 --save-dir results\fl_rounds\run_privacy_balanced
+```
+
+For a separately named Mixup experiment:
+
+```powershell
+python fl\run_fl_simulation.py --dp --epsilon 1.0 --max-grad-norm 0.3 --rounds 10 --local-epochs 1 --mixup-alpha 0.2 --save-dir results\fl_rounds\run_privacy_eps1_mixup02
+```
+
+To reproduce the earlier no-Mixup `epsilon=1.0` result exactly, disable Mixup:
+
+```powershell
+python fl\run_fl_simulation.py --dp --epsilon 1.0 --max-grad-norm 0.3 --rounds 10 --local-epochs 1 --mixup-alpha 0 --save-dir results\fl_rounds\run_privacy_eps1_nomixup
+```
+
+If accuracy drops, test a weaker Mixup value:
+
+```powershell
+python fl\run_fl_simulation.py --dp --epsilon 1.0 --max-grad-norm 0.3 --rounds 10 --local-epochs 1 --mixup-alpha 0.1 --save-dir results\fl_rounds\run_privacy_eps1_mixup01
 ```
 
 Run the white-box inversion attack:
 
 ```powershell
 python security\attacks\model_inversion.py --model-path results\fl_rounds\run_privacy_balanced\global_model_latest.pth --out results\attacks\model_inversion_privacy_balanced.json
+```
+
+Attack the Mixup experiment:
+
+```powershell
+python security\attacks\model_inversion.py --model-path results\fl_rounds\run_privacy_eps1_mixup02\global_model_latest.pth --out results\attacks\model_inversion_eps1_mixup02.json
 ```
 
 Compare against the original vulnerable run:

@@ -16,6 +16,7 @@ version: "3.9"
 #   USE_CRYPTO : "--crypto" (default) | ""
 #   USE_DP     : "--dp" (default) | ""
 #   EPSILON    : DP budget target (default 1.0)
+#   MIXUP_ALPHA: mixup strength, 0 disables it (default 0.2)
 #   ROUNDS     : FL rounds — must be same for server and all clients (default 10)
 #   STRATEGY   : fedavg | fedprox (default fedavg)
 #   FRACTION_FIT: fraction of clients per round (default 1.0)
@@ -75,6 +76,7 @@ services:
       USE_CRYPTO:  "${USE_CRYPTO:---crypto}"
       USE_DP:      "${USE_DP:---dp}"
       EPSILON:     "${EPSILON:-1.0}"
+      MIXUP_ALPHA: "${MIXUP_ALPHA:-0.2}"
       ROUNDS:      "${ROUNDS:-10}"
       MODEL_TYPE:  "${MODEL_TYPE:-mlp}"
 

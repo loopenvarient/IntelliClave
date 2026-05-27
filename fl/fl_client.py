@@ -17,7 +17,7 @@ _HERE = os.path.dirname(__file__)
 _ROOT = os.path.abspath(os.path.join(_HERE, ".."))
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, _HERE)
-from config.constants import DEFAULT_EPSILON, WEIGHT_DECAY  # noqa: E402
+from config.constants import DEFAULT_EPSILON, MIXUP_ALPHA, WEIGHT_DECAY  # noqa: E402
 from data_utils import (  # noqa: E402
     global_norm_arrays_from_config,
     load_csv_data,
@@ -50,6 +50,7 @@ class IntelliClaveClient(fl.client.NumPyClient):
         learning_rate: float = 1e-3,
         batch_size: int = 32,
         weight_decay: float = WEIGHT_DECAY,
+        mixup_alpha: float = MIXUP_ALPHA,
         model_type: str = "mlp",
         # ── DP parameters — all optional, default = DP off ───────────────────────
         use_dp: bool = False,
@@ -68,6 +69,7 @@ class IntelliClaveClient(fl.client.NumPyClient):
         self.local_epochs = local_epochs
         self._learning_rate = learning_rate
         self._weight_decay = weight_decay
+        self._mixup_alpha = mixup_alpha
         self._csv_path = csv_path
         self._batch_size = batch_size
         self._drop_last_for_dp = use_dp
@@ -232,6 +234,7 @@ class IntelliClaveClient(fl.client.NumPyClient):
                 self.optimizer,
                 self.criterion,
                 self.device,
+                mixup_alpha=self._mixup_alpha,
             )
 
         accuracy, macro_f1 = evaluate(self.model, self.test_loader, self.device)
@@ -307,6 +310,7 @@ def start_client(
     local_epochs: int = 3,
     learning_rate: float = 1e-3,
     weight_decay: float = WEIGHT_DECAY,
+    mixup_alpha: float = MIXUP_ALPHA,
     use_dp: bool = False,
     target_epsilon: float = DEFAULT_EPSILON,
     max_grad_norm: float = 0.3,
@@ -330,6 +334,7 @@ def start_client(
             local_epochs=local_epochs,
             learning_rate=learning_rate,
             weight_decay=weight_decay,
+            mixup_alpha=mixup_alpha,
             model_type=model_type,
             use_dp=use_dp,
             target_epsilon=target_epsilon,
@@ -359,6 +364,7 @@ if __name__ == "__main__":
     parser.add_argument("--epsilon", type=float, default=DEFAULT_EPSILON, help="Target epsilon (privacy budget). Default=1.0.")
     parser.add_argument("--max-grad-norm", type=float, default=0.3, help="Gradient clipping norm for DP-SGD. Default=0.3.")
     parser.add_argument("--weight-decay", type=float, default=WEIGHT_DECAY, help="Adam weight decay for regularization.")
+    parser.add_argument("--mixup-alpha", type=float, default=MIXUP_ALPHA, help="Mixup alpha. Set 0 to disable.")
     parser.add_argument("--model-type", default="mlp",
                         choices=["mlp", "resnet-tabular", "transformer-tabular"],
                         help="Model architecture (default: mlp).")
@@ -392,6 +398,7 @@ if __name__ == "__main__":
         local_epochs=args.local_epochs,
         learning_rate=args.lr,
         weight_decay=args.weight_decay,
+        mixup_alpha=args.mixup_alpha,
         batch_size=args.batch_size,
         use_dp=args.dp,
         target_epsilon=args.epsilon,

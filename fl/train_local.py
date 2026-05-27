@@ -24,9 +24,10 @@ from sklearn.metrics import accuracy_score, f1_score
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from config.constants import LABEL_SMOOTHING  # noqa: E402
 from config.constants import CONFIDENCE_PENALTY  # noqa: E402
 from config.constants import DEFAULT_EPSILON  # noqa: E402
+from config.constants import LABEL_SMOOTHING  # noqa: E402
+from config.constants import MIXUP_ALPHA  # noqa: E402
 from data_utils import (  # noqa: E402
     compute_client_scaler_stats,
     get_default_client_csvs,
@@ -45,6 +46,7 @@ def train_one_epoch(
     criterion,
     device,
     confidence_penalty: float = CONFIDENCE_PENALTY,
+    mixup_alpha: float = MIXUP_ALPHA,
 ) -> float:
     model.train()
     total_loss = 0.0
@@ -54,8 +56,19 @@ def train_one_epoch(
         y_batch = y_batch.to(device)
 
         optimizer.zero_grad()
-        logits = model(X_batch)
-        loss = criterion(logits, y_batch)
+        if mixup_alpha > 0 and len(y_batch) > 1:
+            lam = float(np.random.beta(mixup_alpha, mixup_alpha))
+            index = torch.randperm(X_batch.size(0), device=X_batch.device)
+            mixed_x = lam * X_batch + (1.0 - lam) * X_batch[index]
+            logits = model(mixed_x)
+            loss = (
+                lam * criterion(logits, y_batch)
+                + (1.0 - lam) * criterion(logits, y_batch[index])
+            )
+        else:
+            logits = model(X_batch)
+            loss = criterion(logits, y_batch)
+
         if confidence_penalty > 0:
             probs = torch.softmax(logits, dim=1)
             entropy = -(probs * torch.log(probs + 1e-8)).sum(dim=1).mean()
@@ -112,6 +125,7 @@ def train_local(
     model_type: str = "mlp",
     weight_decay: float = 1e-4,
     confidence_penalty: float = CONFIDENCE_PENALTY,
+    mixup_alpha: float = MIXUP_ALPHA,
     early_stopping_patience: int = 3,
     early_stopping_metric: str = "macro_f1",
 ):
@@ -177,6 +191,7 @@ def train_local(
             criterion,
             device,
             confidence_penalty=confidence_penalty,
+            mixup_alpha=mixup_alpha,
         )
         acc, macro_f1 = evaluate(model, test_loader, device)
 
@@ -287,6 +302,8 @@ if __name__ == "__main__":
                         help="Adam weight decay for regularization. Default=1e-4.")
     parser.add_argument("--confidence-penalty", type=float, default=CONFIDENCE_PENALTY,
                         help="Entropy regularization strength. Default=0.03.")
+    parser.add_argument("--mixup-alpha", type=float, default=MIXUP_ALPHA,
+                        help="Mixup alpha. Set 0 to disable. Default=0.2.")
     parser.add_argument("--early-stopping-patience", type=int, default=3,
                         help="Stop local retraining after N stagnant epochs. Default=3.")
     parser.add_argument("--early-stopping-metric", default="macro_f1",
@@ -308,6 +325,7 @@ if __name__ == "__main__":
         model_type=args.model_type,
         weight_decay=args.weight_decay,
         confidence_penalty=args.confidence_penalty,
+        mixup_alpha=args.mixup_alpha,
         early_stopping_patience=args.early_stopping_patience,
         early_stopping_metric=args.early_stopping_metric,
     )

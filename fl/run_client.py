@@ -8,7 +8,7 @@ sys.path.insert(0, _ROOT)
 sys.path.insert(0, _HERE)
 from data_utils import get_default_client_csvs  # noqa: E402
 from fl_client import start_client  # noqa: E402
-from config.constants import DEFAULT_EPSILON, WEIGHT_DECAY  # noqa: E402
+from config.constants import DEFAULT_EPSILON, MIXUP_ALPHA, WEIGHT_DECAY  # noqa: E402
 
 # ── Attestation import ────────────────────────────────────────────────────────
 _TEE_DIR = os.path.join(os.path.dirname(__file__), "..", "tee", "attestation")
@@ -50,6 +50,8 @@ if __name__ == "__main__":
                         help="Gradient clipping norm for DP-SGD. Default=0.3.")
     parser.add_argument("--weight-decay", type=float, default=WEIGHT_DECAY,
                         help="Adam weight decay for regularization.")
+    parser.add_argument("--mixup-alpha", type=float, default=MIXUP_ALPHA,
+                        help="Mixup alpha. Set 0 to disable.")
     parser.add_argument("--rounds", type=int, default=10,
                         help="Total FL rounds — must match server --rounds.")
     parser.add_argument("--attest", action="store_true",
@@ -105,6 +107,7 @@ if __name__ == "__main__":
         local_epochs=args.local_epochs,
         learning_rate=args.lr,
         weight_decay=args.weight_decay,
+        mixup_alpha=args.mixup_alpha,
         batch_size=args.batch_size,
         use_crypto=args.crypto,
         server_public_key_pem=server_public_key_pem,

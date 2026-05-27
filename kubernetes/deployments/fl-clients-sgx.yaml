@@ -65,6 +65,8 @@ spec:
           - "1.0"
           - --rounds
           - "5"
+          - --mixup-alpha
+          - "0.2"
           - --crypto
         env:
         - name: OMP_NUM_THREADS
@@ -174,6 +176,8 @@ spec:
           - "1.0"
           - --rounds
           - "5"
+          - --mixup-alpha
+          - "0.2"
           - --crypto
         env:
         - name: OMP_NUM_THREADS
@@ -283,6 +287,8 @@ spec:
           - "1.0"
           - --rounds
           - "5"
+          - --mixup-alpha
+          - "0.2"
           - --crypto
         env:
         - name: OMP_NUM_THREADS

@@ -14,6 +14,7 @@ Environment variables honoured at runtime (pass via shell or .env file):
     USE_CRYPTO   : "--crypto" | ""          (default: --crypto)
     USE_DP       : "--dp" | ""              (default: --dp)
     EPSILON      : float                    (default: 1.0)
+    MIXUP_ALPHA  : float, 0 disables mixup   (default: 0.2)
     ROUNDS       : int                      (default: 10)
     STRATEGY     : fedavg | fedprox         (default: fedavg)
     FRACTION_FIT : float 0-1                (default: 1.0)
@@ -85,6 +86,7 @@ def generate(n_clients: int, out_path: str):
             '      USE_CRYPTO:  "${USE_CRYPTO:---crypto}"',
             '      USE_DP:      "${USE_DP:---dp}"',
             '      EPSILON:     "${EPSILON:-1.0}"',
+            '      MIXUP_ALPHA: "${MIXUP_ALPHA:-0.2}"',
             '      ROUNDS:      "${ROUNDS:-10}"',
             '      MODEL_TYPE:  "${MODEL_TYPE:-mlp}"',
             "",
