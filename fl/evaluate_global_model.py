@@ -13,6 +13,7 @@ the full client dataset (train + test combined).
 import argparse
 import json
 import os
+import pickle
 import sys
 from typing import Dict, List, Optional
 
@@ -22,8 +23,10 @@ import torch.nn as nn
 
 sys.path.insert(0, os.path.dirname(__file__))
 from data_utils import get_default_client_csvs, load_class_weights, load_csv_data  # noqa: E402
-from model import get_model  # noqa: E402
+from model import build_model_from_state  # noqa: E402
 from train_local import evaluate  # noqa: E402
+
+PCA_MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "samples", "pca_model.pkl")
 
 
 def _strip_state_prefixes(state):
@@ -42,26 +45,6 @@ def _load_checkpoint(checkpoint_path: str):
     if isinstance(state, dict) and "state_dict" in state and isinstance(state["state_dict"], dict):
         state = state["state_dict"]
     return _strip_state_prefixes(state)
-
-
-def _infer_hidden_dims_from_state(state: dict, model_type: str):
-    if not isinstance(state, dict):
-        return None
-    if model_type == "mlp":
-        layers = []
-        idx = 0
-        # feature_extractor layer blocks are Linear, ReLU, Dropout → weights at indices 0,3,6...
-        while True:
-            key = f"feature_extractor.{idx}.weight"
-            if key not in state:
-                break
-            layers.append(int(state[key].shape[0]))
-            idx += 3
-        return tuple(layers) if layers else None
-    if model_type == "resnet-tabular":
-        if "input_proj.0.weight" in state:
-            return (int(state["input_proj.0.weight"].shape[0]),)
-    return None
 
 
 def evaluate_checkpoint(
@@ -87,13 +70,14 @@ def evaluate_checkpoint(
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Load schema and model_type from first CSV + model_meta.json
+    expected_input_dim = None
     meta_path = os.path.join(os.path.dirname(checkpoint_path), "model_meta.json")
     saved_model_type = model_type  # use caller's value as default
     if os.path.exists(meta_path):
         with open(meta_path, encoding="utf-8") as f:
             saved_meta = json.load(f)
         saved_model_type = saved_meta.get("model_type", model_type)
+        expected_input_dim = saved_meta.get("input_dim")
         if saved_model_type != model_type:
             print(f"[evaluate] NOTE: model_meta.json says model_type='{saved_model_type}', "
                   f"overriding --model-type='{model_type}'")
@@ -104,16 +88,17 @@ def evaluate_checkpoint(
         batch_size=batch_size,
         global_mean=global_mean,
         global_std=global_std,
+        expected_input_dim=expected_input_dim,
+        pca_model_path=PCA_MODEL_PATH,
     )
 
     # Load checkpoint and infer hidden dims (for compatibility with older checkpoints)
     state_dict = _load_checkpoint(checkpoint_path)
-    hidden_dims = _infer_hidden_dims_from_state(state_dict, model_type)
-    model = get_model(
+    model = build_model_from_state(
         metadata.input_dim,
         metadata.num_classes,
         model_type=model_type,
-        hidden_dims=hidden_dims,
+        state=state_dict,
     ).to(device)
     model.load_state_dict(state_dict, strict=True)
 
@@ -135,6 +120,10 @@ def evaluate_checkpoint(
             batch_size=batch_size,
             global_mean=global_mean,
             global_std=global_std,
+            expected_input_dim=expected_input_dim,
+            pca_model_path=PCA_MODEL_PATH,
+            num_classes=metadata.num_classes,
+            class_names=metadata.class_names,
         )
 
         total_loss = 0.0

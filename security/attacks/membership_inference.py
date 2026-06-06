@@ -24,6 +24,7 @@ Output:
 
 import json
 import os
+import pickle
 import sys
 
 import numpy as np
@@ -40,7 +41,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
 sys.path.insert(0, os.path.join(_ROOT, "fl"))
 
-from model import get_model          # noqa: E402
+from model import build_model_from_state  # noqa: E402
 from data_utils import infer_csv_schema  # noqa: E402
 
 sys.path.insert(0, os.path.join(_ROOT, "config"))
@@ -59,6 +60,7 @@ CLIENT_CSVS    = sorted(
 OUT_PATH       = os.path.join(_ROOT, "results", "attacks", "membership_inference.json")
 OUT_PATH_NODP  = os.path.join(_ROOT, "results", "attacks", "membership_inference_nodp.json")
 TEST_SPLIT  = 0.3
+PCA_PATH    = os.path.join(_ROOT, "data", "samples", "pca_model.pkl")
 
 
 def load_meta():
@@ -76,8 +78,11 @@ def load_meta():
 
 def load_model(model_path: str = MODEL_PATH):
     meta = load_meta()
-    model = get_model(meta["input_dim"], meta["num_classes"])
     state = torch.load(model_path, map_location="cpu", weights_only=True)
+    if isinstance(state, dict) and "state_dict" in state and isinstance(state["state_dict"], dict):
+        state = state["state_dict"]
+    state = {k.removeprefix("module.").removeprefix("_module."): v for k, v in state.items()} if isinstance(state, dict) else state
+    model = build_model_from_state(meta["input_dim"], meta["num_classes"], state)
     model.load_state_dict(state)
     model.eval()
     return model
@@ -135,6 +140,7 @@ def main(out_path: str = OUT_PATH, dp_mode: bool = False,
         print("Mode: No-DP model (baseline)")
     print("=" * 55)
 
+    meta = load_meta()
     model = load_model(model_path=model_path)
     all_results = []
 
@@ -146,6 +152,22 @@ def main(out_path: str = OUT_PATH, dp_mode: bool = False,
         feat_cols = [c for c in df.columns if c != label_col]
         X = df[feat_cols].values.astype(np.float32)
         raw_y = df[label_col].values
+
+        expected_dim = int(meta["input_dim"])
+        if X.shape[1] != expected_dim:
+            if not os.path.exists(PCA_PATH):
+                raise ValueError(
+                    f"Checkpoint expects {expected_dim} input features, but {os.path.basename(csv_path)} has {X.shape[1]} "
+                    f"and no PCA model was found at {PCA_PATH}."
+                )
+            with open(PCA_PATH, "rb") as f:
+                pca = pickle.load(f)
+            if getattr(pca, "n_components_", None) != expected_dim:
+                raise ValueError(
+                    f"Checkpoint expects {expected_dim} input features, but PCA model at {PCA_PATH} "
+                    f"has {getattr(pca, 'n_components_', 'unknown')} components."
+                )
+            X = pca.transform(X).astype(np.float32)
 
         # Auto-detect label offset — works for 0-based, 1-based, or any range
         unique = sorted(np.unique(raw_y).tolist())

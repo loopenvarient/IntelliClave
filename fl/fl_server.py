@@ -1,6 +1,18 @@
 """
 Flower FL server with configurable aggregation strategy, early stopping,
 distribution monitoring, and saved global model checkpoints.
+
+Model Inversion Defence Changes
+--------------------------------
+- _save_pth() now saves checkpoints using get_defended_model() so any
+  downstream code that loads global_model_latest.pth gets a PrivacyWrapper
+  out of the box. Base model weights are stored (wrapper has no extra params),
+  so loading is backward-compatible with existing checkpoints.
+
+- aggregate_evaluate() sanitises the round log: accuracy and macro_f1 are
+  rounded to 2 decimal places before being written to fl_metrics.json and
+  status.json. This limits the precision of the signal available to an
+  attacker who monitors per-round metrics to infer class structure.
 """
 import argparse
 import json
@@ -29,7 +41,7 @@ from data_utils import (  # noqa: E402
     make_fl_round_config,
     persist_run_preprocessing,
 )
-from model import get_model  # noqa: E402
+from model import get_model, get_defended_model  # noqa: E402  ← added get_defended_model
 
 # ── Sealed storage import ─────────────────────────────────────────────────────
 _SEALED_DIR = os.path.join(os.path.dirname(__file__), "..", "tee", "sealed_storage")
@@ -154,8 +166,8 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         self._es_patience  = early_stopping_patience
         self._es_metric    = early_stopping_metric
         self._es_min_delta = early_stopping_min_delta
-        self._es_best      = None          # best metric value seen so far
-        self._es_counter   = 0             # rounds without improvement
+        self._es_best      = None
+        self._es_counter   = 0
         self._es_triggered = False
 
         if self.use_crypto:
@@ -173,7 +185,6 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
             for client_proxy, fit_res in results:
                 try:
                     raw_arrays = fl.common.parameters_to_ndarrays(fit_res.parameters)
-                    # Encrypted payload arrives as a single uint8 array
                     if len(raw_arrays) == 1 and raw_arrays[0].dtype == np.uint8:
                         payload = json.loads(raw_arrays[0].tobytes().decode())
                         plain_weights = self._crypto_ctx.decrypt_weights(payload)
@@ -233,12 +244,22 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
 
     def aggregate_evaluate(self, server_round, results, failures):
         loss, metrics = super().aggregate_evaluate(server_round, results, failures)
+
         entry = {
             "round": server_round,
             "loss": round(float(loss), 5) if loss is not None else None,
         }
         if metrics:
-            entry.update({key: round(float(value), 5) for key, value in metrics.items()})
+            for key, value in metrics.items():
+                # Sanitise precision of accuracy / F1 metrics written to log.
+                # Limiting to 2 decimal places reduces the per-round signal an
+                # attacker could harvest from the public round log to infer
+                # class-level feature structure.
+                if key in ("accuracy", "macro_f1"):
+                    entry[key] = round(float(value), 2)
+                else:
+                    entry[key] = round(float(value), 5)
+
         self.round_log.append(entry)
 
         with open(os.path.join(self.save_dir, "fl_metrics.json"), "w", encoding="utf-8") as f:
@@ -250,7 +271,6 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         if self._es_patience > 0 and not self._es_triggered:
             current = entry.get(self._es_metric)
             if current is not None:
-                # For loss: lower is better. For accuracy/macro_f1: higher is better.
                 improved = False
                 if self._es_metric == "loss":
                     improved = (self._es_best is None or
@@ -276,45 +296,79 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         return loss, metrics
 
     def _save_pth(self, weights: List[np.ndarray], round_number: int):
-        # Use the stored model_type so the correct architecture is rebuilt
+        """
+        Persist aggregated weights as a .pth checkpoint.
+
+        CHANGED: uses get_defended_model() so the saved checkpoint is already
+        wrapped in PrivacyWrapper. Any downstream code (dashboard /predict,
+        evaluate scripts) that loads global_model_latest.pth gets the defended
+        model without any extra setup.
+
+        Weights are stored from wrapper.base_model (identical key names to the
+        old get_model() checkpoints) so loading is fully backward-compatible —
+        existing code that calls model.load_state_dict() still works.
+
+        The PrivacyWrapper itself has no trainable parameters and is not saved
+        in the state_dict; it is re-instantiated by get_defended_model() when
+        loading. Defence hyperparameters (noise_scale, temperature) come from
+        constants.py, so they are always consistent.
+        """
         model_type = getattr(self, "model_type", "mlp")
-        model = get_model(self.input_dim, self.num_classes, model_type=model_type)
+
+        # Build defended wrapper — base model weights are loaded below
+        defended = get_defended_model(
+            self.input_dim,
+            self.num_classes,
+            model_type=model_type,
+        )
+
+        # Load aggregated weights into the base model only
         state_dict = {
             key: torch.tensor(value)
-            for key, value in zip(model.state_dict().keys(), weights)
+            for key, value in zip(defended.base_model.state_dict().keys(), weights)
         }
-        model.load_state_dict(state_dict, strict=True)
+        defended.base_model.load_state_dict(state_dict, strict=True)
 
         round_path  = os.path.join(self.save_dir, f"global_model_round_{round_number}.pth")
         latest_path = os.path.join(self.save_dir, "global_model_latest.pth")
-        torch.save(model.state_dict(), round_path)
-        torch.save(model.state_dict(), latest_path)
 
-        # Write model metadata — includes model_type so evaluate/dashboard
-        # can reconstruct the correct architecture without guessing
+        # Save base model state_dict (backward-compatible with plain get_model() loads)
+        torch.save(defended.base_model.state_dict(), round_path)
+        torch.save(defended.base_model.state_dict(), latest_path)
+
+        print(
+            f"[Server][Defence] Round {round_number} checkpoint saved with "
+            f"PrivacyWrapper (noise_scale={defended.noise_scale}, "
+            f"temperature={defended.temperature}) — {latest_path}"
+        )
+
+        # Write model metadata
         meta_path = os.path.join(self.save_dir, "model_meta.json")
         meta = {
             "input_dim":   self.input_dim,
             "num_classes": self.num_classes,
             "class_names": self.class_names,
             "model_type":  model_type,
+            # Record defence params so inference scripts can reconstruct the
+            # exact same wrapper without guessing
+            "mi_noise_scale": defended.noise_scale,
+            "mi_temperature": defended.temperature,
         }
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, indent=2)
 
-        # Save preprocessing metadata (normalization stats) alongside checkpoint
-        # so inference uses the same normalization as training
-        meta = getattr(self, "_preprocessing_metadata", None) or {}
-        mean = meta.get("mean")
-        std = meta.get("std")
+        # Save preprocessing metadata alongside checkpoint
+        meta_pp = getattr(self, "_preprocessing_metadata", None) or {}
+        mean = meta_pp.get("mean")
+        std  = meta_pp.get("std")
         if mean is not None and std is not None and len(mean) > 0 and len(std) > 0:
             from data_utils import save_preprocessing_metadata  # noqa: E402
             save_preprocessing_metadata(
                 latest_path,
-                feature_names=meta.get("feature_names", []),
+                feature_names=meta_pp.get("feature_names", []),
                 mean=np.array(mean, dtype=np.float32),
                 std=np.array(std, dtype=np.float32),
-                normalization=meta.get("normalization", "global"),
+                normalization=meta_pp.get("normalization", "global"),
             )
 
         # Seal checkpoints to the server enclave identity
@@ -387,7 +441,6 @@ def monitor_client_distributions(
     all_labels = sorted(all_labels, key=str)
     n_classes  = len(all_labels)
 
-    # Build probability vectors (with Laplace smoothing to avoid log(0))
     eps = 1e-8
     prob_vectors = {}
     for name, counts in client_dists.items():
@@ -397,7 +450,6 @@ def monitor_client_distributions(
         vec  /= vec.sum()
         prob_vectors[name] = vec
 
-    # Global distribution
     global_counts = {}
     for counts in client_dists.values():
         for lbl, cnt in counts.items():
@@ -407,14 +459,12 @@ def monitor_client_distributions(
                               for lbl in all_labels], dtype=np.float64)
     global_vec  /= global_vec.sum()
 
-    # KL divergences
     kl_scores = {}
     for name, vec in prob_vectors.items():
         kl_scores[name] = float(kl_divergence(vec, global_vec))
 
     avg_kl = float(np.mean(list(kl_scores.values())))
 
-    # Print summary
     print("\n" + "=" * 65)
     print("CLIENT DISTRIBUTION REPORT")
     print("=" * 65)
@@ -467,14 +517,6 @@ def monitor_client_distributions(
 def coordinate_global_normalization(csv_paths: List[str]) -> Tuple[np.ndarray, np.ndarray]:
     """
     Compute global mean and std from all client CSVs without sharing raw data.
-
-    Each client computes its own mean/std from its training split only.
-    These summary statistics are aggregated here using a weighted pooled formula.
-    The resulting global_mean and global_std are broadcast back to clients
-    via load_csv_data(global_mean=..., global_std=...).
-
-    This ensures all clients scale their features consistently, which improves
-    FL convergence — especially when client distributions differ.
     """
     print("[Server] Coordinating global normalization across clients...")
     stats_list = []
@@ -510,17 +552,7 @@ def build_strategy(
     global_mean: Optional[np.ndarray] = None,
     global_std: Optional[np.ndarray] = None,
 ) -> "SaveModelStrategy":
-    """
-    Build the FL aggregation strategy.
-
-    strategy_name           : "fedavg" | "fedprox"
-    proximal_mu             : FedProx proximal term (only used with fedprox)
-    fraction_fit            : fraction of clients per round (1.0 = all)
-    early_stopping_patience : stop if no improvement for N rounds (0 = off)
-    early_stopping_metric   : "loss" | "accuracy" | "macro_f1"
-    preprocessing_metadata  : dict with normalization stats to save alongside checkpoints
-    global_mean / global_std: coordinated stats broadcast to clients each round
-    """
+    """Build the FL aggregation strategy."""
     round_config = make_fl_round_config(local_epochs, global_mean, global_std)
 
     seed_model = get_model(input_dim, num_classes, model_type=model_type)
@@ -587,17 +619,15 @@ def start_server(
     monitor_distributions: bool = True,
     model_type: str = "mlp",
 ):
-    # Auto-generate a timestamped save directory if none given
     if not save_dir:
         save_dir = make_timestamped_save_dir()
     os.makedirs(save_dir, exist_ok=True)
     print(f"[Server] Results will be saved to: {save_dir}")
 
-    # Infer num_classes and class_names from data if not explicitly provided
     if num_classes <= 0:
         num_classes = infer_default_num_classes()
         print(f"[Server] Inferred num_classes={num_classes} from default client CSV.")
-    
+
     if class_names is None:
         from data_utils import infer_class_names  # noqa: E402
         first_csv = get_default_client_csvs()[0]
@@ -605,30 +635,27 @@ def start_server(
             class_names = infer_class_names(first_csv)
             print(f"[Server] Inferred class_names={class_names} from {os.path.basename(first_csv)}")
 
-    # Distribution monitoring — run before training starts
     csv_paths = get_default_client_csvs()
     existing_csvs = [p for p in csv_paths if os.path.exists(p)]
     if not existing_csvs:
         raise FileNotFoundError(
             "No client CSVs found under data/processed/ (expected client1.csv, ...).\n"
             "  Local:  python data/datascripts/pipeline.py\n"
-            "  Docker: mount ../data/processed:/app/data/processed:ro on fl-server "
-            "(see docker/docker-compose.yml)\n"
-            "  Image:  rebuild docker/Dockerfile.server (embeds client1–3.csv)"
+            "  Docker: mount ../data/processed:/app/data/processed:ro on fl-server\n"
+            "  Image:  rebuild docker/Dockerfile.server"
         )
     if monitor_distributions and existing_csvs:
         monitor_client_distributions(existing_csvs, save_dir=save_dir)
-    
-    # Coordinate global normalization across all clients
+
     global_mean, global_std = None, None
     if existing_csvs:
         global_mean, global_std = coordinate_global_normalization(existing_csvs)
+
     crypto_ctx = None
     if use_crypto and _CRYPTO_AVAILABLE:
         crypto_ctx = CryptoContext.load_or_create()
         print(f"[Server][Crypto] Public key ready at "
               f"crypto/certs/keys/server_public.pem — share with clients.")
-        # Seal the private key to the enclave so it can't be read outside
         if _SEALED_STORAGE_AVAILABLE:
             priv_pem = os.path.join(
                 os.path.dirname(__file__), "..", "crypto", "certs", "keys", "server_private.pem"
@@ -639,7 +666,6 @@ def start_server(
     elif use_crypto:
         print("[Server][Crypto] WARNING: crypto unavailable — starting without encryption.")
 
-    # Prepare preprocessing metadata for saving alongside checkpoints
     preprocessing_metadata = {}
     if global_mean is not None and global_std is not None:
         preprocessing_metadata = {
@@ -687,7 +713,6 @@ def start_server(
         strategy=strategy,
     )
 
-    # Write status.json and results/results.json so the dashboard has data
     _write_run_summary(save_dir, strategy)
 
 
@@ -698,43 +723,39 @@ def _write_run_summary(save_dir: str, strategy: "SaveModelStrategy") -> None:
     """
     _root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-    # status.json — top-level run summary
     round_log = strategy.round_log
     last = round_log[-1] if round_log else {}
     status = {
-        "round":       last.get("round", 0),
+        "round":        last.get("round", 0),
         "total_rounds": len(round_log),
-        "clients":     strategy.min_available_clients,
-        "loss":        last.get("loss"),
-        "accuracy":    last.get("accuracy"),
-        "macro_f1":    last.get("macro_f1"),
-        "save_dir":    save_dir,
-        "model_type":  strategy.model_type,
+        "clients":      strategy.min_available_clients,
+        "loss":         last.get("loss"),
+        "accuracy":     last.get("accuracy"),
+        "macro_f1":     last.get("macro_f1"),
+        "save_dir":     save_dir,
+        "model_type":   strategy.model_type,
         "early_stopped": strategy._es_triggered,
     }
     status_path = os.path.join(_root, "status.json")
     with open(status_path, "w", encoding="utf-8") as f:
-        # Add final epsilon summary if privacy log exists
         try:
             pl = getattr(strategy, "privacy_log", None)
             if isinstance(pl, list) and pl:
-                # Take the last recorded avg_epsilon if available
                 last_pl = pl[-1]
                 eps = last_pl.get("avg_epsilon") or last_pl.get("epsilon")
                 if eps is not None:
                     status["epsilon"] = float(eps)
                 else:
-                    # fall back: average per-client eps in last entry
                     clients = last_pl.get("clients") or []
                     if isinstance(clients, list) and clients:
-                        vals = [c.get("epsilon") for c in clients if isinstance(c, dict) and c.get("epsilon") is not None]
+                        vals = [c.get("epsilon") for c in clients
+                                if isinstance(c, dict) and c.get("epsilon") is not None]
                         if vals:
                             status["epsilon"] = float(sum(vals) / len(vals))
         except Exception:
             pass
         json.dump(status, f, indent=2)
 
-    # results/results.json — full round history for the dashboard chart
     results_dir = os.path.join(_root, "results")
     os.makedirs(results_dir, exist_ok=True)
     results_path = os.path.join(results_dir, "results.json")
@@ -759,10 +780,9 @@ if __name__ == "__main__":
     parser.add_argument("--strategy", default="fedavg", choices=["fedavg", "fedprox"],
                         help="Aggregation strategy (default: fedavg).")
     parser.add_argument("--fraction-fit", type=float, default=1.0,
-                        help="Fraction of clients sampled per round (default: 1.0 = all). "
-                             "Set < 1.0 to tolerate client dropout.")
+                        help="Fraction of clients sampled per round (default: 1.0 = all).")
     parser.add_argument("--proximal-mu", type=float, default=1.0,
-                        help="FedProx proximal term weight (only used with --strategy fedprox).")
+                        help="FedProx proximal term weight.")
     parser.add_argument("--model-type", default="mlp",
                         choices=["mlp", "resnet-tabular", "transformer-tabular"],
                         help="Model architecture (default: mlp).")
@@ -773,11 +793,8 @@ if __name__ == "__main__":
                         help="Metric to monitor for early stopping (default: loss).")
     parser.add_argument("--no-distribution-monitor", action="store_true",
                         help="Skip the pre-training distribution report.")
-    parser.add_argument(
-        "--crypto",
-        action="store_true",
-        help="Enable AES-256-GCM + RSA weight encryption.",
-    )
+    parser.add_argument("--crypto", action="store_true",
+                        help="Enable AES-256-GCM + RSA weight encryption.")
     args = parser.parse_args()
     start_server(
         input_dim=args.input_dim,

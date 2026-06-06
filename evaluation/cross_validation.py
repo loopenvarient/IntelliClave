@@ -57,17 +57,42 @@ DEVICE     = torch.device("cpu")
 
 # ── data helpers ──────────────────────────────────────────────────────────────
 
-def load_raw(csv_path: str):
+def load_raw(csv_path: str, global_class_names: list = None):
     """
     Load CSV → (X float32, y int64 0-based, class_names list).
 
     Handles both numeric and string labels.
+
+    If global_class_names is provided, labels are encoded against
+    that global set so that every client uses the same class indices
+    even when some classes are absent in a particular client's data.
+    This prevents "Target N is out of bounds" in non-IID setups.
     """
     df = pd.read_csv(csv_path).dropna()
     feat_cols = [c for c in df.columns if c != LABEL_COL]
     X = df[feat_cols].values.astype(np.float32)
     raw_y = df[LABEL_COL].values
 
+    if global_class_names is not None:
+        # Build label map from the global class list so indices are consistent
+        # across all clients regardless of which classes each client has.
+        unique_global = sorted(np.unique(raw_y).tolist())
+        if all(isinstance(v, (int, float, np.integer, np.floating)) for v in unique_global):
+            # Map each raw numeric label to its index in global_class_names
+            label_to_idx = {}
+            for idx, name in enumerate(global_class_names):
+                # global_class_names are "class_0", "class_1", ... or raw labels
+                try:
+                    label_to_idx[int(name.replace("class_", ""))] = idx
+                except (ValueError, AttributeError):
+                    label_to_idx[name] = idx
+            y = np.array([label_to_idx[int(v)] for v in raw_y], dtype=np.int64)
+        else:
+            label_to_idx = {name: idx for idx, name in enumerate(global_class_names)}
+            y = np.array([label_to_idx[v] for v in raw_y], dtype=np.int64)
+        return X, y, global_class_names
+
+    # No global set provided — infer from this CSV only (original behaviour)
     unique = sorted(np.unique(raw_y).tolist())
     if all(isinstance(v, (int, float, np.integer, np.floating)) for v in unique):
         offset = int(min(unique))
@@ -259,11 +284,25 @@ def main(csv_paths: list, n_folds: int = 5, epochs: int = 10):
             "No CSV files found. Pass --csvs or place CSVs in data/processed/."
         )
 
+    # ── Discover the global class set from ALL CSVs first ─────────────────────
+    # This ensures every per-client CV run uses the same class indices even
+    # when some clients are missing certain classes (non-IID setting).
+    all_labels: set = set()
+    for path in csv_paths:
+        df = pd.read_csv(path, usecols=[LABEL_COL]).dropna()
+        all_labels.update(df[LABEL_COL].unique().tolist())
+    global_unique = sorted(all_labels)
+    if all(isinstance(v, (int, float, np.integer, np.floating)) for v in global_unique):
+        global_class_names = [f"class_{int(v)}" for v in global_unique]
+    else:
+        global_class_names = [str(v) for v in global_unique]
+    # ──────────────────────────────────────────────────────────────────────────
+
     all_results = {}
     raw = {}
 
     for path in csv_paths:
-        X, y, class_names = load_raw(path)
+        X, y, class_names = load_raw(path, global_class_names=global_class_names)
         raw[path] = (X, y, class_names)
 
     for path in csv_paths:
@@ -277,10 +316,8 @@ def main(csv_paths: list, n_folds: int = 5, epochs: int = 10):
         # All CSVs must share the same feature schema
         X_all = np.concatenate([raw[p][0] for p in csv_paths])
         y_all = np.concatenate([raw[p][1] for p in csv_paths])
-        # Use class names from the first file (assumed consistent)
-        class_names_all = raw[csv_paths[0]][2]
         result = run_cv(
-            X_all, y_all, class_names_all,
+            X_all, y_all, global_class_names,
             n_folds=n_folds, epochs=epochs,
             label="combined (all clients)",
         )

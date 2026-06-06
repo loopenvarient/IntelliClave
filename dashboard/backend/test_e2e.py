@@ -147,22 +147,29 @@ check(
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 7: POST /predict — label only (default, no confidence)
 # ─────────────────────────────────────────────────────────────────────────────
-# Determine the expected feature dimension from the model meta or processed CSVs
-import json as _json
-import pandas as _pd_module
-_meta_path = os.path.join(_ROOT, "results", "fl_rounds", "model_meta.json")
-if os.path.exists(_meta_path):
-    with open(_meta_path, encoding="utf-8") as _f:
-        _meta = _json.load(_f)
+# Determine the expected feature dimension from the active model meta or processed CSVs
+try:
+    from main import _find_latest_model_path, _load_model_meta
+    _model_path = _find_latest_model_path()
+    _meta = _load_model_meta(_model_path)
     _expected_dim = _meta["input_dim"]
     _valid_labels = set(_meta.get("class_names", []))
-else:
-    # Fallback: infer from first processed CSV
-    _processed = os.path.join(_ROOT, "data", "processed")
-    _csvs = sorted(f for f in os.listdir(_processed) if f.endswith(".csv"))
-    _df = _pd_module.read_csv(os.path.join(_processed, _csvs[0]), nrows=1)
-    _expected_dim = len([c for c in _df.columns if c != "label"])
-    _valid_labels = set()
+except Exception:
+    import json as _json
+    import pandas as _pd_module
+    _meta_path = os.path.join(_ROOT, "results", "fl_rounds", "model_meta.json")
+    if os.path.exists(_meta_path):
+        with open(_meta_path, encoding="utf-8") as _f:
+            _meta = _json.load(_f)
+        _expected_dim = _meta["input_dim"]
+        _valid_labels = set(_meta.get("class_names", []))
+    else:
+        # Fallback: infer from first processed CSV
+        _processed = os.path.join(_ROOT, "data", "processed")
+        _csvs = sorted(f for f in os.listdir(_processed) if f.endswith(".csv"))
+        _df = _pd_module.read_csv(os.path.join(_processed, _csvs[0]), nrows=1)
+        _expected_dim = len([c for c in _df.columns if c != "label"])
+        _valid_labels = set()
 
 features = [0.0] * _expected_dim
 r = client.post("/predict", json={"features": features})
@@ -179,7 +186,7 @@ check(
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 8: POST /predict — with return_confidence=true
 # ─────────────────────────────────────────────────────────────────────────────
-r = client.post("/predict", json={"features": features, "return_confidence": True})
+r = client.post("/predict", json={"features": features, "return_confidence": True}, headers={"Authorization": "Bearer admin-token-123"})
 body = r.json() if r.status_code == 200 else {}
 check(
     "POST /predict (return_confidence=true) → confidence is float",

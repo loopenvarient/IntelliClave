@@ -1,0 +1,62 @@
+[
+  {
+    "round": 1,
+    "loss": 1.00039,
+    "accuracy": 0.63,
+    "macro_f1": 0.5
+  },
+  {
+    "round": 2,
+    "loss": 0.78619,
+    "accuracy": 0.68,
+    "macro_f1": 0.5
+  },
+  {
+    "round": 3,
+    "loss": 0.67135,
+    "accuracy": 0.7,
+    "macro_f1": 0.53
+  },
+  {
+    "round": 4,
+    "loss": 0.70456,
+    "accuracy": 0.71,
+    "macro_f1": 0.53
+  },
+  {
+    "round": 5,
+    "loss": 0.81616,
+    "accuracy": 0.72,
+    "macro_f1": 0.54
+  },
+  {
+    "round": 6,
+    "loss": 0.94273,
+    "accuracy": 0.71,
+    "macro_f1": 0.53
+  },
+  {
+    "round": 7,
+    "loss": 1.03519,
+    "accuracy": 0.72,
+    "macro_f1": 0.54
+  },
+  {
+    "round": 8,
+    "loss": 1.07946,
+    "accuracy": 0.73,
+    "macro_f1": 0.56
+  },
+  {
+    "round": 9,
+    "loss": 1.008,
+    "accuracy": 0.75,
+    "macro_f1": 0.59
+  },
+  {
+    "round": 10,
+    "loss": 0.93736,
+    "accuracy": 0.77,
+    "macro_f1": 0.62
+  }
+]

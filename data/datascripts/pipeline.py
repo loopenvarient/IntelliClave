@@ -21,7 +21,7 @@ Or use this script to validate and plot them:
 MODE B — One combined CSV, split into clients
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 You have one big CSV. Split it by a grouping column (e.g. site_id, region)
-or randomly into N equal parts.
+or use Dirichlet class-wise partitioning for stronger non-IID clients.
 
     # Split by a column:
     python data/datascripts/pipeline.py --mode split \\
@@ -30,6 +30,11 @@ or randomly into N equal parts.
     # Random split into 4 clients:
     python data/datascripts/pipeline.py --mode split \\
         --csv data.csv --label-col outcome --n-clients 4
+
+    # Dirichlet non-IID split:
+    python data/datascripts/pipeline.py --mode split \
+        --csv data.csv --label-col outcome --n-clients 4 \
+        --partition dirichlet --dirichlet-alpha 0.3
 
     # With optional PCA dimensionality reduction:
     python data/datascripts/pipeline.py --mode split \\
@@ -164,6 +169,54 @@ def _verify(saved: dict):
     print("  All checks passed ✓")
 
 
+def _dirichlet_partition_indices(
+    labels: np.ndarray,
+    n_clients: int,
+    alpha: float,
+    min_size: int = 1,
+    seed: int = 42,
+    max_attempts: int = 500,
+) -> list:
+    """Partition sample indices by class using a Dirichlet draw per label."""
+    labels = np.asarray(labels)
+    unique_labels = np.unique(labels)
+    rng = np.random.default_rng(seed)
+
+    for _ in range(max_attempts):
+        client_indices = [[] for _ in range(n_clients)]
+
+        for label in unique_labels:
+            label_indices = np.where(labels == label)[0]
+            if len(label_indices) == 0:
+                continue
+
+            rng.shuffle(label_indices)
+            proportions = rng.dirichlet(np.full(n_clients, alpha))
+            counts = np.floor(proportions * len(label_indices)).astype(int)
+
+            remainder = len(label_indices) - counts.sum()
+            if remainder > 0:
+                for client_id in np.argsort(-proportions)[:remainder]:
+                    counts[client_id] += 1
+
+            start = 0
+            for client_id, count in enumerate(counts):
+                end = start + count
+                if count > 0:
+                    client_indices[client_id].extend(label_indices[start:end].tolist())
+                start = end
+
+        if min(len(indices) for indices in client_indices) >= min_size:
+            for indices in client_indices:
+                rng.shuffle(indices)
+            return [np.array(indices, dtype=int) for indices in client_indices]
+
+    raise ValueError(
+        f"Unable to build a Dirichlet partition after {max_attempts} attempts. "
+        f"Try increasing --dirichlet-alpha or reducing --min-client-size."
+    )
+
+
 def _plot(saved: dict, out_dir: str):
     """Save a class distribution chart."""
     names   = list(saved.keys())
@@ -271,6 +324,9 @@ def mode_split(
     label_col: str,
     split_col: str,
     n_clients: int,
+    partition: str,
+    dirichlet_alpha: float,
+    min_client_size: int,
     out_dir: str,
     pca_components: int,
     pca_model_path: str,
@@ -279,7 +335,8 @@ def mode_split(
 ):
     """
     Load one combined CSV and split it into per-client CSVs.
-    Split by a grouping column (e.g. site_id) or randomly.
+    Split by a grouping column (e.g. site_id), by Dirichlet class partition,
+    or randomly.
     """
     print(f"=== Mode B: combined CSV split ===")
     print(f"  Loading {csv_path}...")
@@ -307,6 +364,18 @@ def mode_split(
         splits  = [df[df[split_col].isin(c)].drop(columns=[split_col]).reset_index(drop=True)
                    for c in chunks]
         print(f"  Split by '{split_col}': {len(groups)} groups → {n_clients} clients")
+    elif partition == "dirichlet":
+        indices = _dirichlet_partition_indices(
+            df["label"].values,
+            n_clients=n_clients,
+            alpha=dirichlet_alpha,
+            min_size=min_client_size,
+        )
+        splits = [df.iloc[idx].reset_index(drop=True) for idx in indices]
+        print(
+            f"  Dirichlet split into {n_clients} clients "
+            f"(alpha={dirichlet_alpha}, min_size={min_client_size})"
+        )
     else:
         if split_col:
             print(f"  WARNING: split column '{split_col}' not found — using random split")
@@ -350,6 +419,9 @@ def mode_textfiles(
     subjects_train_path: str,
     subjects_test_path: str,
     n_clients: int,
+    partition: str,
+    dirichlet_alpha: float,
+    min_client_size: int,
     out_dir: str,
     pca_components: int,
     pca_model_path: str,
@@ -357,7 +429,8 @@ def mode_textfiles(
     fit_pca: bool,
 ):
     """
-    Load X/y/subject text files, optionally apply PCA, split by subject groups.
+    Load X/y/subject text files, optionally apply PCA, split by subject groups
+    or use Dirichlet class partitioning.
     Backward-compatible with the original UCI HAR pipeline.
     """
     print("=== Mode C: raw text files ===")
@@ -382,17 +455,43 @@ def mode_textfiles(
         feat_cols = [f"feat_{i}" for i in range(X_all.shape[1])]
         print(f"  Using {len(feat_cols)} raw features (no PCA)")
 
-    # Split by subject groups
-    unique_subjects = np.unique(s_all)
-    groups   = np.array_split(unique_subjects, n_clients)
-    masks    = [np.isin(s_all, g) for g in groups]
     client_names = [f"client{i+1}" for i in range(n_clients)]
 
-    splits = []
-    for mask in masks:
-        df = pd.DataFrame(X_all[mask], columns=feat_cols)
-        df["label"] = y_enc[mask]
-        splits.append(df)
+    if partition == "dirichlet":
+        indices = _dirichlet_partition_indices(
+            y_enc,
+            n_clients=n_clients,
+            alpha=dirichlet_alpha,
+            min_size=min_client_size,
+        )
+        splits = []
+        for idx in indices:
+            df = pd.DataFrame(X_all[idx], columns=feat_cols)
+            df["label"] = y_enc[idx]
+            splits.append(df.reset_index(drop=True))
+        print(
+            f"  Dirichlet split into {n_clients} clients "
+            f"(alpha={dirichlet_alpha}, min_size={min_client_size})"
+        )
+    elif partition == "random":
+        perm = np.random.default_rng(42).permutation(len(y_enc))
+        chunks = np.array_split(perm, n_clients)
+        splits = []
+        for idx in chunks:
+            df = pd.DataFrame(X_all[idx], columns=feat_cols)
+            df["label"] = y_enc[idx]
+            splits.append(df.reset_index(drop=True))
+        print(f"  Random split into {n_clients} clients")
+    else:
+        unique_subjects = np.unique(s_all)
+        groups   = np.array_split(unique_subjects, n_clients)
+        masks    = [np.isin(s_all, g) for g in groups]
+
+        splits = []
+        for mask in masks:
+            df = pd.DataFrame(X_all[mask], columns=feat_cols)
+            df["label"] = y_enc[mask]
+            splits.append(df)
 
     saved = _save_client_csvs(splits, client_names, out_dir)
     _verify(saved)
@@ -424,6 +523,11 @@ EXAMPLES
     python data/datascripts/pipeline.py --mode split \\
         --csv combined_data.csv --label-col target --n-clients 4
 
+    Mode B — one combined CSV, Dirichlet non-IID split:
+        python data/datascripts/pipeline.py --mode split \
+                --csv combined_data.csv --label-col target --n-clients 4 \
+                --partition dirichlet --dirichlet-alpha 0.3
+
   Mode B — with PCA dimensionality reduction:
     python data/datascripts/pipeline.py --mode split \\
         --csv combined_data.csv --label-col target \\
@@ -436,6 +540,10 @@ EXAMPLES
     python data/datascripts/pipeline.py --mode textfiles \\
         --x-train X.txt --y-train y.txt \\
         --subjects-train s_train.txt --subjects-test s_test.txt --no-pca
+
+  Mode C — UCI HAR Dirichlet non-IID split:
+    python data/datascripts/pipeline.py --mode textfiles \
+        --partition dirichlet --dirichlet-alpha 0.3
         """,
     )
 
@@ -469,6 +577,24 @@ EXAMPLES
                         help="Name of the label/target column (default: label).")
     parser.add_argument("--n-clients",      type=int, default=3,
                         help="Number of FL clients (default: 3).")
+    parser.add_argument(
+        "--partition",
+        choices=["subject", "random", "dirichlet"],
+        default="subject",
+        help="Client partition strategy for split/textfiles modes.",
+    )
+    parser.add_argument(
+        "--dirichlet-alpha",
+        type=float,
+        default=0.3,
+        help="Dirichlet concentration for non-IID splits (smaller = more skewed).",
+    )
+    parser.add_argument(
+        "--min-client-size",
+        type=int,
+        default=1,
+        help="Minimum number of samples each Dirichlet client must receive.",
+    )
     parser.add_argument("--out-dir",        default=_DEFAULT_OUT,
                         help="Output directory for client CSVs.")
     parser.add_argument("--pca-components", type=int, default=50,
@@ -505,6 +631,9 @@ EXAMPLES
             label_col=args.label_col,
             split_col=args.split_col,
             n_clients=args.n_clients,
+            partition=args.partition,
+            dirichlet_alpha=args.dirichlet_alpha,
+            min_client_size=args.min_client_size,
             out_dir=args.out_dir,
             pca_components=args.pca_components,
             pca_model_path=args.pca_model,
@@ -521,6 +650,9 @@ EXAMPLES
             subjects_train_path=args.subjects_train,
             subjects_test_path=args.subjects_test,
             n_clients=args.n_clients,
+            partition=args.partition,
+            dirichlet_alpha=args.dirichlet_alpha,
+            min_client_size=args.min_client_size,
             out_dir=args.out_dir,
             pca_components=args.pca_components,
             pca_model_path=args.pca_model,

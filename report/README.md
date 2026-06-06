@@ -2,6 +2,8 @@
 
 All report sections, documentation, and figures are collected here.
 
+For a complete project-wide folder/file map and run guide, see [project_inventory.md](project_inventory.md).
+
 ---
 
 ## Report Sections

@@ -26,6 +26,7 @@ Output:
 
 import json
 import os
+import pickle
 import sys
 
 import numpy as np
@@ -39,7 +40,11 @@ _ROOT = os.path.abspath(os.path.join(_HERE, "..", ".."))
 sys.path.insert(0, os.path.join(_ROOT, "fl"))
 sys.path.insert(0, os.path.join(_ROOT, "config"))
 
-from model import get_model, get_defended_model   # noqa: E402
+from model import (  # noqa: E402
+    PrivacyWrapper,
+    build_model_from_state,
+    get_defended_model,
+)
 from data_utils import infer_csv_schema            # noqa: E402
 from constants import LABEL_COL, MI_NOISE_SCALE, MI_TEMPERATURE  # noqa: E402
 
@@ -49,6 +54,7 @@ PROCESSED_DIR = os.path.join(_ROOT, "data", "processed")
 OUT_PATH      = os.path.join(_ROOT, "results", "attacks", "model_inversion.json")
 DEFAULT_LR    = 0.05
 DEFAULT_STEPS = 500
+PCA_PATH      = os.path.join(_ROOT, "data", "samples", "pca_model.pkl")
 
 
 def _strip_state_prefixes(state):
@@ -116,8 +122,12 @@ def load_model(input_dim, num_classes, model_path: str = MODEL_PATH):
     state = _load_checkpoint(model_path)
     meta = load_meta_for_path(model_path)
     model_type = meta.get("model_type", "mlp")
-    hidden_dims = _infer_hidden_dims(state, model_type)
-    model = get_model(input_dim, num_classes, model_type=model_type, hidden_dims=hidden_dims)
+    model = build_model_from_state(
+        input_dim=input_dim,
+        num_classes=num_classes,
+        state=state,
+        model_type=model_type,
+    )
     model.load_state_dict(state)
     model.eval()
     return model
@@ -131,17 +141,21 @@ def load_defended(input_dim, num_classes, model_path: str = MODEL_PATH,
     Weights are loaded into wrapper.base_model so Opacus checkpoints
     (which only contain the inner model's state_dict) load correctly.
     """
-    wrapper = get_defended_model(
+    state = _load_checkpoint(model_path)
+    meta = load_meta_for_path(model_path)
+    base_model = build_model_from_state(
         input_dim=input_dim,
         num_classes=num_classes,
-        model_type=load_meta_for_path(model_path).get("model_type", "mlp"),
-        hidden_dims=_infer_hidden_dims(_load_checkpoint(model_path), load_meta_for_path(model_path).get("model_type", "mlp")),
+        state=state,
+        model_type=meta.get("model_type", "mlp"),
+    )
+    base_model.load_state_dict(state)
+    wrapper = PrivacyWrapper(
+        base_model=base_model,
         noise_scale=noise_scale,
         temperature=temperature,
         enabled=True,
     )
-    state = _load_checkpoint(model_path)
-    wrapper.base_model.load_state_dict(state)
     wrapper.eval()
     return wrapper
 
@@ -157,6 +171,21 @@ def load_all_data(_input_dim, label_col: str = LABEL_COL):
     feat_cols = [c for c in df.columns if c != label_col]
     X = df[feat_cols].values.astype(np.float32)
     raw_y = df[label_col].values
+
+    if X.shape[1] != _input_dim:
+        if not os.path.exists(PCA_PATH):
+            raise ValueError(
+                f"Checkpoint expects {_input_dim} input features, but processed CSVs have {X.shape[1]} "
+                f"and no PCA model was found at {PCA_PATH}."
+            )
+        with open(PCA_PATH, "rb") as f:
+            pca = pickle.load(f)
+        if getattr(pca, "n_components_", None) != _input_dim:
+            raise ValueError(
+                f"Checkpoint expects {_input_dim} input features, but PCA model at {PCA_PATH} "
+                f"has {getattr(pca, 'n_components_', 'unknown')} components."
+            )
+        X = pca.transform(X).astype(np.float32)
     unique = sorted(np.unique(raw_y).tolist())
     offset = int(min(unique)) if all(isinstance(v, (int, float)) for v in unique) else 0
     y = raw_y.astype(np.int64) - offset

@@ -9,85 +9,85 @@
   },
   "sweep": [
     {
-      "accuracy": 0.962154,
-      "macro_f1": 0.963164,
+      "accuracy": 0.933042,
+      "macro_f1": 0.934663,
       "per_class_f1": {
-        "class_1": 0.988406,
-        "class_2": 0.97553,
-        "class_3": 0.982394,
-        "class_4": 0.912181,
-        "class_5": 0.920469,
-        "class_6": 1.0
+        "class_1": 0.979651,
+        "class_2": 0.974522,
+        "class_3": 0.958707,
+        "class_4": 0.843575,
+        "class_5": 0.893499,
+        "class_6": 0.958025
       },
       "poison_rate": 0.0,
       "n_poisoned_labels": 0
     },
     {
-      "accuracy": 0.962154,
-      "macro_f1": 0.962691,
+      "accuracy": 0.935953,
+      "macro_f1": 0.936556,
       "per_class_f1": {
-        "class_1": 0.98987,
-        "class_2": 0.974026,
-        "class_3": 0.971631,
-        "class_4": 0.915835,
-        "class_5": 0.92607,
-        "class_6": 0.998716
+        "class_1": 0.9721,
+        "class_2": 0.967949,
+        "class_3": 0.941799,
+        "class_4": 0.864865,
+        "class_5": 0.906417,
+        "class_6": 0.966208
       },
       "poison_rate": 0.1,
-      "n_poisoned_labels": 248
+      "n_poisoned_labels": 443
     },
     {
-      "accuracy": 0.960699,
-      "macro_f1": 0.961612,
+      "accuracy": 0.920427,
+      "macro_f1": 0.919564,
       "per_class_f1": {
-        "class_1": 0.991279,
-        "class_2": 0.977273,
-        "class_3": 0.977072,
-        "class_4": 0.906205,
-        "class_5": 0.919127,
-        "class_6": 0.998716
+        "class_1": 0.958702,
+        "class_2": 0.932099,
+        "class_3": 0.912409,
+        "class_4": 0.850144,
+        "class_5": 0.902537,
+        "class_6": 0.961491
       },
       "poison_rate": 0.3,
-      "n_poisoned_labels": 745
+      "n_poisoned_labels": 1331
     },
     {
-      "accuracy": 0.954876,
-      "macro_f1": 0.955316,
+      "accuracy": 0.887433,
+      "macro_f1": 0.887021,
       "per_class_f1": {
-        "class_1": 0.985423,
-        "class_2": 0.963082,
-        "class_3": 0.964413,
-        "class_4": 0.904694,
-        "class_5": 0.914286,
-        "class_6": 1.0
+        "class_1": 0.917574,
+        "class_2": 0.865412,
+        "class_3": 0.9,
+        "class_4": 0.819048,
+        "class_5": 0.863248,
+        "class_6": 0.956843
       },
       "poison_rate": 0.5,
-      "n_poisoned_labels": 1242
+      "n_poisoned_labels": 2218
     },
     {
-      "accuracy": 0.901989,
-      "macro_f1": 0.901361,
+      "accuracy": 0.151868,
+      "macro_f1": 0.047159,
       "per_class_f1": {
-        "class_1": 0.919003,
-        "class_2": 0.85,
-        "class_3": 0.908397,
-        "class_4": 0.872063,
-        "class_5": 0.861272,
-        "class_6": 0.997429
+        "class_1": 0.0,
+        "class_2": 0.261824,
+        "class_3": 0.021127,
+        "class_4": 0.0,
+        "class_5": 0.0,
+        "class_6": 0.0
       },
       "poison_rate": 1.0,
-      "n_poisoned_labels": 2484
+      "n_poisoned_labels": 4437
     }
   ],
   "summary": {
-    "baseline_accuracy": 0.962154,
-    "baseline_macro_f1": 0.963164,
-    "full_poison_accuracy": 0.901989,
-    "full_poison_macro_f1": 0.901361,
-    "accuracy_drop": 0.060165,
-    "f1_drop": 0.061803,
-    "risk_level": "MEDIUM",
-    "verdict": "MODERATE \u2014 poisoning causes measurable but limited degradation",
+    "baseline_accuracy": 0.933042,
+    "baseline_macro_f1": 0.934663,
+    "full_poison_accuracy": 0.151868,
+    "full_poison_macro_f1": 0.047159,
+    "accuracy_drop": 0.781174,
+    "f1_drop": 0.887504,
+    "risk_level": "HIGH",
+    "verdict": "VULNERABLE \u2014 a single poisoned client significantly degrades the global model",
     "mitigation_note": "FedAvg is known to be vulnerable to Byzantine attacks. Mitigations include: robust aggregation (Krum, Trimmed Mean), anomaly detection on client updates, and DP-SGD which limits the influence of any single gradient."
   }
 }

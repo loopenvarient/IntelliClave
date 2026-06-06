@@ -74,15 +74,41 @@ POISON_RATES  = [0.0, 0.1, 0.3, 0.5, 1.0]
 
 
 def _load_meta():
+    """
+    Load model metadata, always cross-checking input_dim against the actual
+    CSV feature count.  model_meta.json may have been written by a PCA-reduced
+    FL run (e.g. input_dim=50) while the raw CSVs have many more features.
+    When they disagree we trust the CSV — the attack simulation trains from
+    scratch on raw data and must match the CSV's true shape.
+    """
+    if not CLIENT_CSVS:
+        raise FileNotFoundError("No CSVs found in data/processed/")
+
+    # Ground-truth input_dim from the raw CSV (no PCA)
+    csv_input_dim, _ = infer_csv_schema(CLIENT_CSVS[0], LABEL_COL)
+
     if os.path.exists(META_PATH):
         with open(META_PATH, encoding="utf-8") as f:
-            return _json.load(f)
-    if not CLIENT_CSVS:
-        raise FileNotFoundError("No model_meta.json and no CSVs in data/processed/")
-    input_dim, _ = infer_csv_schema(CLIENT_CSVS[0], LABEL_COL)
+            meta = _json.load(f)
+        stored_dim = meta.get("input_dim", csv_input_dim)
+        if stored_dim != csv_input_dim:
+            # meta.json was produced by a PCA-reduced run; override with CSV dim
+            print(
+                f"[gradient_poisoning] NOTE: model_meta.json input_dim={stored_dim} "
+                f"differs from CSV feature count={csv_input_dim}. "
+                f"Using CSV dim for this simulation."
+            )
+            meta["input_dim"] = csv_input_dim
+        return meta
+
     df = pd.read_csv(CLIENT_CSVS[0], usecols=[LABEL_COL])
-    num_classes = int(df[LABEL_COL].nunique())
-    return {"input_dim": input_dim, "num_classes": num_classes,
+    # Determine the total number of unique classes across ALL CSVs so that
+    # non-IID clients with missing classes do not shrink the class count.
+    all_labels: set = set()
+    for csv in CLIENT_CSVS:
+        all_labels.update(pd.read_csv(csv, usecols=[LABEL_COL])[LABEL_COL].unique())
+    num_classes = len(all_labels)
+    return {"input_dim": csv_input_dim, "num_classes": num_classes,
             "class_names": [f"class_{i}" for i in range(num_classes)]}
 
 _META = _load_meta()

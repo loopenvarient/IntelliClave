@@ -59,6 +59,7 @@ class SimClient(fl.client.NumPyClient):
         num_fl_rounds: int = NUM_ROUNDS,
         global_mean: Optional[np.ndarray] = None,
         global_std: Optional[np.ndarray] = None,
+        num_classes: Optional[int] = None,
     ):
         self.cid          = cid
         self.local_epochs = local_epochs
@@ -75,6 +76,7 @@ class SimClient(fl.client.NumPyClient):
             drop_last_for_dp=use_dp,
             global_mean=global_mean,
             global_std=global_std,
+            num_classes=num_classes,
         )
         self.model = get_model(
             self.metadata.input_dim,
@@ -258,6 +260,7 @@ def main(
             num_fl_rounds=num_rounds,
             global_mean=global_mean,
             global_std=global_std,
+            num_classes=metadata.num_classes,
         )
 
     strategy = build_strategy(

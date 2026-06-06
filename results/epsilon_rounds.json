@@ -1,72 +1,37 @@
 [
   {
     "fl_round": 1,
-    "epsilon_consumed": 3.2604,
-    "budget_remaining": 6.7396,
+    "epsilon_consumed": 5.0289,
+    "budget_remaining": 4.9711,
     "budget_exhausted": false,
-    "test_accuracy": 0.4815
+    "test_accuracy": 0.7658
   },
   {
     "fl_round": 2,
-    "epsilon_consumed": 4.381,
-    "budget_remaining": 5.619,
+    "epsilon_consumed": 6.5831,
+    "budget_remaining": 3.4169,
     "budget_exhausted": false,
-    "test_accuracy": 0.7101
+    "test_accuracy": 0.8108
   },
   {
     "fl_round": 3,
-    "epsilon_consumed": 5.2968,
-    "budget_remaining": 4.7032,
+    "epsilon_consumed": 7.8512,
+    "budget_remaining": 2.1488,
     "budget_exhausted": false,
-    "test_accuracy": 0.7987
+    "test_accuracy": 0.8072
   },
   {
     "fl_round": 4,
-    "epsilon_consumed": 6.1057,
-    "budget_remaining": 3.8943,
+    "epsilon_consumed": 8.9713,
+    "budget_remaining": 1.0287,
     "budget_exhausted": false,
-    "test_accuracy": 0.81
+    "test_accuracy": 0.8414
   },
   {
     "fl_round": 5,
-    "epsilon_consumed": 6.8458,
-    "budget_remaining": 3.1542,
+    "epsilon_consumed": 9.9968,
+    "budget_remaining": 0.0032,
     "budget_exhausted": false,
-    "test_accuracy": 0.8519
-  },
-  {
-    "fl_round": 6,
-    "epsilon_consumed": 7.5367,
-    "budget_remaining": 2.4633,
-    "budget_exhausted": false,
-    "test_accuracy": 0.8696
-  },
-  {
-    "fl_round": 7,
-    "epsilon_consumed": 8.19,
-    "budget_remaining": 1.81,
-    "budget_exhausted": false,
-    "test_accuracy": 0.8889
-  },
-  {
-    "fl_round": 8,
-    "epsilon_consumed": 8.8135,
-    "budget_remaining": 1.1865,
-    "budget_exhausted": false,
-    "test_accuracy": 0.9098
-  },
-  {
-    "fl_round": 9,
-    "epsilon_consumed": 9.4126,
-    "budget_remaining": 0.5874,
-    "budget_exhausted": false,
-    "test_accuracy": 0.9163
-  },
-  {
-    "fl_round": 10,
-    "epsilon_consumed": 9.9911,
-    "budget_remaining": 0.0089,
-    "budget_exhausted": false,
-    "test_accuracy": 0.9163
+    "test_accuracy": 0.8694
   }
 ]

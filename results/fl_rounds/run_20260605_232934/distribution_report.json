@@ -1,0 +1,47 @@
+{
+  "clients": [
+    "client1.csv",
+    "client2.csv",
+    "client3.csv"
+  ],
+  "classes": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5"
+  ],
+  "counts_per_client": {
+    "client1.csv": {
+      "0": 1595,
+      "1": 1286,
+      "5": 845,
+      "3": 826,
+      "4": 614,
+      "2": 381
+    },
+    "client2.csv": {
+      "4": 1292,
+      "5": 1097,
+      "2": 696,
+      "1": 254,
+      "3": 161,
+      "0": 4
+    },
+    "client3.csv": {
+      "3": 790,
+      "2": 329,
+      "0": 123,
+      "1": 4,
+      "5": 2
+    }
+  },
+  "kl_divergence": {
+    "client1.csv": 0.09830366081086474,
+    "client2.csv": 0.3678967328835361,
+    "client3.csv": 0.9242433531563622
+  },
+  "avg_kl": 0.4634812489502543,
+  "recommendation": "Highly non-IID \u2014 consider --strategy fedprox or reducing --local-epochs."
+}

@@ -26,7 +26,11 @@ if _FL_DIR not in sys.path:
     sys.path.insert(0, _FL_DIR)
 
 try:
-    from data_utils import global_norm_arrays_from_config, load_csv_data  # noqa: E402
+    from data_utils import (  # noqa: E402
+        global_norm_arrays_from_config,
+        infer_default_num_classes,
+        load_csv_data,
+    )
     _FL_DATA_UTILS = True
 except ImportError:
     _FL_DATA_UTILS = False
@@ -107,6 +111,7 @@ class DPFlowerClient(fl.client.NumPyClient):
                 drop_last_for_dp=True,
                 global_mean=g_mean,
                 global_std=g_std,
+                num_classes=infer_default_num_classes(),
             )
             delta = 1.0 / metadata.train_size
             return train_loader, delta, metadata.num_classes, metadata.input_dim

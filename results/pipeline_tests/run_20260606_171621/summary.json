@@ -1,0 +1,62 @@
+﻿[
+    {
+        "name":  "Data/schema check",
+        "status":  "passed",
+        "exit_code":  0,
+        "started_at":  "2026-06-06T17:16:21.4894472+05:00",
+        "finished_at":  "2026-06-06T17:16:39.6751871+05:00",
+        "duration_seconds":  18.19,
+        "log":  "C:\\Users\\DELL\\OneDrive\\Documents\\IntelliClave\\IntelliClave\\results\\pipeline_tests\\run_20260606_171621\\data_schema_check.log",
+        "command":  "conda run -n IntelliClave python data/datascripts/check_data.py"
+    },
+    {
+        "name":  "Crypto tests",
+        "status":  "passed",
+        "exit_code":  0,
+        "started_at":  "2026-06-06T17:16:39.9636517+05:00",
+        "finished_at":  "2026-06-06T17:16:44.3149148+05:00",
+        "duration_seconds":  4.35,
+        "log":  "C:\\Users\\DELL\\OneDrive\\Documents\\IntelliClave\\IntelliClave\\results\\pipeline_tests\\run_20260606_171621\\crypto_tests.log",
+        "command":  "conda run -n IntelliClave python crypto/certs/test_crypto.py"
+    },
+    {
+        "name":  "Attestation integration",
+        "status":  "passed",
+        "exit_code":  0,
+        "started_at":  "2026-06-06T17:16:44.3551544+05:00",
+        "finished_at":  "2026-06-06T17:16:49.0916541+05:00",
+        "duration_seconds":  4.74,
+        "log":  "C:\\Users\\DELL\\OneDrive\\Documents\\IntelliClave\\IntelliClave\\results\\pipeline_tests\\run_20260606_171621\\attestation_integration.log",
+        "command":  "conda run -n IntelliClave python tee/attestation/attestation_integration.py"
+    },
+    {
+        "name":  "Sealed storage",
+        "status":  "passed",
+        "exit_code":  0,
+        "started_at":  "2026-06-06T17:16:49.1001658+05:00",
+        "finished_at":  "2026-06-06T17:16:54.5314080+05:00",
+        "duration_seconds":  5.43,
+        "log":  "C:\\Users\\DELL\\OneDrive\\Documents\\IntelliClave\\IntelliClave\\results\\pipeline_tests\\run_20260606_171621\\sealed_storage.log",
+        "command":  "conda run -n IntelliClave python tee/sealed_storage/sealed_storage.py"
+    },
+    {
+        "name":  "Dashboard backend E2E",
+        "status":  "failed",
+        "exit_code":  -1,
+        "started_at":  "2026-06-06T17:16:54.5458180+05:00",
+        "finished_at":  "2026-06-06T17:17:12.7445033+05:00",
+        "duration_seconds":  18.2,
+        "log":  "C:\\Users\\DELL\\OneDrive\\Documents\\IntelliClave\\IntelliClave\\results\\pipeline_tests\\run_20260606_171621\\dashboard_backend_e2e.log",
+        "command":  "conda run -n IntelliClave python dashboard/backend/test_e2e.py"
+    },
+    {
+        "name":  "Client import smoke test",
+        "status":  "passed",
+        "exit_code":  0,
+        "started_at":  "2026-06-06T17:17:12.7582271+05:00",
+        "finished_at":  "2026-06-06T17:17:27.1221760+05:00",
+        "duration_seconds":  14.36,
+        "log":  "C:\\Users\\DELL\\OneDrive\\Documents\\IntelliClave\\IntelliClave\\results\\pipeline_tests\\run_20260606_171621\\client_import_smoke_test.log",
+        "command":  "conda run -n IntelliClave python -c import sys; sys.path.insert(0, \u0027fl\u0027); import data_utils, fl_client; print(\u0027classes=\u0027, data_utils.infer_default_num_classes()); print(\u0027fl_client import ok\u0027)"
+    }
+]

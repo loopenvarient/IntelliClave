@@ -1,5 +1,6 @@
 import json
 import os
+import pickle
 import warnings
 from dataclasses import dataclass, field
 from typing import Dict, List, Literal, Optional, Tuple
@@ -367,6 +368,25 @@ def infer_class_names(csv_path: str, target_col: str = "label") -> List[str]:
     return [str(v) for v in unique]
 
 
+def infer_default_num_classes(n_clients: int = 3, target_col: str = "label") -> int:
+    """Infer the global class count from the default processed client CSVs."""
+    csv_paths = [path for path in get_default_client_csvs(n_clients) if os.path.exists(path)]
+    if not csv_paths:
+        raise FileNotFoundError(
+            f"No default client CSVs found in {get_processed_data_dir()}"
+        )
+
+    labels = []
+    for path in csv_paths:
+        df = pd.read_csv(path, usecols=[target_col])
+        labels.extend(df[target_col].dropna().unique().tolist())
+
+    if not labels:
+        raise ValueError(f"No labels found in default client CSVs: {csv_paths}")
+
+    return int(len(set(labels)))
+
+
 def compute_client_scaler_stats(
     csv_path: str,
     target_col: str = "label",
@@ -464,6 +484,10 @@ def load_csv_data(
     global_mean: Optional[np.ndarray] = None,
     global_std: Optional[np.ndarray] = None,
     drop_last_for_dp: bool = False,
+    expected_input_dim: Optional[int] = None,
+    pca_model_path: Optional[str] = None,
+    num_classes: Optional[int] = None,
+    class_names: Optional[List[str]] = None,
 ):
     """
     Load any classification or regression CSV, impute missing values,
@@ -548,6 +572,21 @@ def load_csv_data(
     X     = df[feature_names].values.astype(np.float32)
     raw_y = df[target_col].values
 
+    if expected_input_dim is not None and X.shape[1] != expected_input_dim:
+        if not pca_model_path or not os.path.exists(pca_model_path):
+            raise ValueError(
+                f"{os.path.basename(csv_path)} has {X.shape[1]} features but the checkpoint expects "
+                f"{expected_input_dim}; PCA model not found at {pca_model_path}."
+            )
+        with open(pca_model_path, "rb") as f:
+            pca = pickle.load(f)
+        if getattr(pca, "n_components_", None) != expected_input_dim:
+            raise ValueError(
+                f"PCA model at {pca_model_path} has {getattr(pca, 'n_components_', 'unknown')} components "
+                f"but checkpoint expects {expected_input_dim}."
+            )
+        X = pca.transform(X).astype(np.float32)
+
     # ── Label encoding ────────────────────────────────────────────────────────
     if task == "regression":
         y          = raw_y.astype(np.float32)
@@ -558,13 +597,23 @@ def load_csv_data(
         if all(isinstance(v, (int, float, np.integer, np.floating)) for v in unique_raw):
             offset      = label_offset if label_offset is not None else int(min(unique_raw))
             y           = raw_y.astype(np.int64) - offset
-            num_classes = len(unique_raw)
-            class_names = [f"class_{int(v)}" for v in unique_raw]
+            inferred_num_classes = len(unique_raw)
+            num_classes = num_classes if num_classes is not None else inferred_num_classes
+            class_names = (
+                class_names
+                if class_names is not None
+                else [f"class_{i}" for i in range(num_classes)]
+            )
         else:
             label_map   = {name: idx for idx, name in enumerate(unique_raw)}
             y           = np.array([label_map[v] for v in raw_y], dtype=np.int64)
-            num_classes = len(unique_raw)
-            class_names = [str(v) for v in unique_raw]
+            inferred_num_classes = len(unique_raw)
+            num_classes = num_classes if num_classes is not None else inferred_num_classes
+            class_names = (
+                class_names
+                if class_names is not None
+                else [str(v) for v in unique_raw]
+            )
 
         if y.min() < 0 or y.max() >= num_classes:
             raise ValueError(

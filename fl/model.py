@@ -6,34 +6,49 @@ Model architectures for IntelliClave FL.
 Three architectures are available — select via get_model(model_type=...):
 
     "mlp"               : Feed-forward MLP (default). Fast, works well on most
-                                                tabular datasets. Hidden dims: 96 → 48.
+                          tabular datasets. Hidden dims: 96 → 48.
 
-  "resnet-tabular"    : Residual MLP with skip connections. Better gradient
-                        flow for deeper networks; useful when MLP underfits.
+    "resnet-tabular"    : Residual MLP with skip connections. Better gradient
+                          flow for deeper networks; useful when MLP underfits.
 
-  "transformer-tabular": Lightweight Transformer encoder over feature tokens.
-                        Captures feature interactions; best for datasets with
-                        many correlated features (100+).
+    "transformer-tabular": Lightweight Transformer encoder over feature tokens.
+                           Captures feature interactions; best for datasets with
+                           many correlated features (100+).
 
 All architectures accept any input_dim and num_classes — no hardcoded sizes.
 
 Model Inversion Defence
 -----------------------
 Use get_defended_model() instead of get_model() when serving predictions.
-It wraps any architecture in PrivacyWrapper, which applies two defences at
+It wraps any architecture in PrivacyWrapper, which applies three defences at
 inference time:
 
-  1. Output perturbation — Laplace noise added to raw logits before softmax.
-     Breaks the clean gradient signal the inversion optimizer needs.
+  1. Gradient blocking — the entire base model forward pass runs inside
+     torch.no_grad(). Even if the caller forgets no_grad, the inversion
+     optimizer receives zero gradient signal and degrades to blind search.
 
-  2. Temperature scaling — logits divided by T > 1 before softmax.
+  2. Output perturbation — Laplace noise added to raw logits before softmax.
+     Disrupts the remaining output signal even under black-box attacks.
+
+  3. Temperature scaling — logits divided by T > 1 before softmax.
      Flattens confidence peaks so reconstructed inputs have lower cosine
      similarity to real class centroids.
 
-Training is unaffected: PrivacyWrapper.forward() is only active during
-model.eval() (i.e. torch.no_grad() inference calls). During training
-(model.train()) it passes logits through unchanged so DP-SGD and loss
-computation work exactly as before.
+  4. Hard-label option — optionally return only argmax (no probabilities).
+     Eliminates the soft probability vector the inversion loss function needs.
+
+Training is completely unaffected: during model.train() the wrapper passes
+logits through unchanged so DP-SGD and loss computation work as before.
+
+FIX vs previous version
+------------------------
+Previous PrivacyWrapper checked `not self.training` to gate defences, but
+ran the base model OUTSIDE no_grad. The inversion optimizer calls model.eval()
+then does gradient-based optimisation — self.training was False but gradients
+still flowed through, giving the attacker a clean gradient signal despite noise
+being added to the output. The fix wraps the entire base model call inside
+torch.no_grad() on the inference path, completely severing the gradient
+regardless of what the calling code does.
 """
 from typing import Iterable, List, Literal
 
@@ -97,6 +112,35 @@ class FLClassifier(nn.Module):
         if self.training and self.feature_noise_std > 0:
             features = features + torch.randn_like(features) * self.feature_noise_std
         return self.classifier(features)
+
+
+class LegacyMLPClassifier(nn.Module):
+    """Backward-compatible MLP used by older saved checkpoints with `net.*` keys."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        num_classes: int,
+        hidden_dims: Iterable[int] = (96, 48),
+        dropout: float = DROPOUT_RATE,
+    ):
+        super().__init__()
+        layers: List[nn.Module] = []
+        prev = input_dim
+
+        for hidden_dim in hidden_dims:
+            layers.extend([
+                nn.Linear(prev, hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+            ])
+            prev = hidden_dim
+
+        layers.append(nn.Linear(prev, num_classes))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
 
 
 # Backward-compat alias
@@ -221,31 +265,56 @@ class TransformerTabular(nn.Module):
 
 class PrivacyWrapper(nn.Module):
     """
-    Wraps any classifier with two output-space model-inversion defences.
+    Wraps any classifier with layered model-inversion defences.
 
-    Defences are applied ONLY during eval() (i.e. inference / torch.no_grad()).
-    During train() they are bypassed so that DP-SGD, loss computation, and
+    Defences are applied ONLY during eval() (i.e. inference).
+    During train() they are bypassed so DP-SGD, loss computation, and
     Opacus gradient hooks all see clean, unperturbed logits.
+
+    KEY FIX vs previous version
+    ---------------------------
+    The entire base model forward pass now runs inside torch.no_grad() on the
+    inference path. Previously the base model was called outside no_grad, which
+    meant gradient-based inversion attacks could still optimise through the
+    network even though noise was added to the output. Now the gradient is
+    severed at the source — the attacker gets zero gradient regardless of
+    whether they remembered to call no_grad themselves.
+
+    Defence layers (inference only)
+    --------------------------------
+    1. Gradient blocking  — base_model runs in torch.no_grad() context.
+                            Inversion optimizer gets zero gradient → degrades
+                            to blind/black-box search.
+
+    2. Output perturbation — Laplace(0, noise_scale) added to raw logits.
+                             Disrupts output signal for black-box attacks.
+
+    3. Temperature scaling — logits / temperature before softmax.
+                             Flattens probability peaks; lowers cosine
+                             similarity of reconstructed vs real inputs.
+
+    4. Hard-label mode    — return only argmax index instead of probabilities.
+                            Eliminates the soft vector the inversion loss needs.
+                            Enable with hard_label=True for maximum privacy at
+                            the cost of downstream probability-based features.
 
     Parameters
     ----------
     base_model   : any nn.Module that returns raw logits
-    noise_scale  : scale of Laplace noise added to logits (default from
-                   MI_NOISE_SCALE).
-                   Increase until avg cosine similarity in the attack drops
-                   below 0.6. Values above ~2.0 start degrading top-1 accuracy.
-    temperature  : softmax temperature T > 1 (default from MI_TEMPERATURE).
-                   Divides logits before softmax — flattens confidence peaks.
-                   Does not change the argmax (predicted class), only probabilities.
-    enabled      : set False to disable both defences (ablation / attack testing).
+    noise_scale  : Laplace noise scale on logits (default from MI_NOISE_SCALE)
+    temperature  : softmax temperature T > 1 (default from MI_TEMPERATURE)
+    hard_label   : if True, return argmax index only — no probabilities exposed
+    enabled      : master switch — False disables all defences (ablation)
 
     Usage
     -----
-    # At inference (dashboard /predict endpoint):
-    defended = PrivacyWrapper(base_model, noise_scale=MI_NOISE_SCALE, temperature=MI_TEMPERATURE)
+    # At inference / dashboard /predict endpoint:
+    defended = PrivacyWrapper(base_model)
     defended.eval()
+    # No need to wrap in torch.no_grad() — wrapper does it internally,
+    # but it's still good practice to call it from the outside too.
     with torch.no_grad():
-        probs = defended(x)   # returns softmax probabilities, not logits
+        probs = defended(x)   # returns softmax probs (or argmax if hard_label=True)
 
     # During FL training — use base_model directly, not the wrapper:
     base_model.train()
@@ -258,37 +327,58 @@ class PrivacyWrapper(nn.Module):
         base_model: nn.Module,
         noise_scale: float = MI_NOISE_SCALE,
         temperature: float = MI_TEMPERATURE,
+        hard_label: bool = False,
         enabled: bool = True,
     ):
         super().__init__()
         self.base_model  = base_model
         self.noise_scale = noise_scale
         self.temperature = temperature
+        self.hard_label  = hard_label
         self.enabled     = enabled
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        logits = self.base_model(x)
+        # ── Training path — no defences, full gradient flow for DP-SGD ──────
+        if self.training:
+            return self.base_model(x)
 
-        # Defences only active during inference (eval mode + no_grad context).
-        # self.training is False whenever model.eval() has been called.
-        if self.enabled and not self.training:
-            # 1. Output perturbation — Laplace noise on raw logits.
-            #    Breaks the clean gradient signal the inversion optimizer follows.
-            noise  = torch.distributions.Laplace(
-                torch.zeros_like(logits),
-                self.noise_scale * torch.ones_like(logits),
-            ).sample()
-            logits = logits + noise
+        # ── Inference path — all defences active ────────────────────────────
+        #
+        # CRITICAL: run the entire base model inside torch.no_grad().
+        # This severs gradients at the source. Even if the caller (e.g. an
+        # inversion attack script) calls model.eval() and then does
+        # loss.backward(), they get zero gradient — the attack degrades from
+        # gradient-based optimisation to blind random search.
+        #
+        with torch.no_grad():
+            logits = self.base_model(x)
 
-            # 2. Temperature scaling — flatten confidence peaks.
-            #    Does not change argmax; only squeezes the probability vector.
-            logits = logits / self.temperature
+            if self.enabled:
+                # Defence 1 — Output perturbation (Laplace noise on logits).
+                # Sampled fresh every forward call so the attacker cannot
+                # average away the noise across repeated queries.
+                noise = torch.distributions.Laplace(
+                    torch.zeros_like(logits),
+                    self.noise_scale * torch.ones_like(logits),
+                ).sample()
+                logits = logits + noise
 
-        # Always return softmax probabilities from the defended model so the
-        # /predict endpoint doesn't need to call softmax separately.
-        # During training this is still raw logits / temperature=1 → same as before
-        # because the temperature branch above is skipped.
-        return torch.softmax(logits, dim=-1) if not self.training else logits
+                # Defence 2 — Temperature scaling.
+                # Divides logits before softmax — flattens confidence peaks.
+                # Does not change argmax; only squeezes the probability vector
+                # so inversion reconstruction has lower cosine similarity.
+                logits = logits / self.temperature
+
+            # Defence 3 — Hard-label mode (optional, maximum privacy).
+            # Returns only the predicted class index; gives attacker no
+            # probability vector to optimise against.
+            if self.hard_label and self.enabled:
+                return logits.argmax(dim=-1)
+
+            # Default: return softmax probabilities (soft labels).
+            # Still defended by noise + temperature; suitable for use cases
+            # that need confidence scores (e.g. dashboard uncertainty display).
+            return torch.softmax(logits, dim=-1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -323,6 +413,63 @@ def get_model(
     )
 
 
+def infer_hidden_dims_from_state(state: dict, model_type: ModelType = "mlp"):
+    """Infer hidden dimensions from a checkpoint state_dict."""
+    if not isinstance(state, dict):
+        return None
+
+    if any(key.startswith("feature_extractor.") for key in state):
+        layers = []
+        idx = 0
+        while True:
+            key = f"feature_extractor.{idx}.weight"
+            if key not in state:
+                break
+            layers.append(int(state[key].shape[0]))
+            idx += 3
+        return tuple(layers) if layers else None
+
+    if any(key.startswith("net.") for key in state):
+        layers = []
+        idx = 0
+        while True:
+            key = f"net.{idx}.weight"
+            if key not in state:
+                break
+            layers.append(int(state[key].shape[0]))
+            idx += 3
+        return tuple(layers[:-1]) if len(layers) > 1 else None
+
+    if model_type == "resnet-tabular" and "input_proj.0.weight" in state:
+        return (int(state["input_proj.0.weight"].shape[0]),)
+
+    return None
+
+
+def build_model_from_state(
+    input_dim: int,
+    num_classes: int,
+    state: dict,
+    model_type: ModelType = "mlp",
+) -> nn.Module:
+    """Build a model matching the checkpoint architecture."""
+    if any(key.startswith("net.") for key in state):
+        hidden_dims = infer_hidden_dims_from_state(state, model_type="mlp") or (96, 48)
+        return LegacyMLPClassifier(
+            input_dim=input_dim,
+            num_classes=num_classes,
+            hidden_dims=hidden_dims,
+        )
+
+    hidden_dims = infer_hidden_dims_from_state(state, model_type=model_type)
+    return get_model(
+        input_dim=input_dim,
+        num_classes=num_classes,
+        model_type=model_type,
+        hidden_dims=hidden_dims,
+    )
+
+
 def get_defended_model(
     input_dim: int,
     num_classes: int,
@@ -330,14 +477,15 @@ def get_defended_model(
     hidden_dims: Iterable[int] | None = None,
     noise_scale: float = MI_NOISE_SCALE,
     temperature: float = MI_TEMPERATURE,
+    hard_label: bool = False,
     enabled: bool = True,
 ) -> PrivacyWrapper:
     """
     Build a model wrapped in PrivacyWrapper for inference serving.
 
     Call this in the dashboard /predict endpoint instead of get_model().
-    The returned wrapper shares no state with the training model — load
-    state_dict into wrapper.base_model after calling this function:
+    The returned wrapper shares weights with whatever base model you load into
+    wrapper.base_model — load state_dict into base_model after calling this:
 
         wrapper = get_defended_model(input_dim, num_classes)
         wrapper.base_model.load_state_dict(
@@ -345,16 +493,23 @@ def get_defended_model(
         )
         wrapper.eval()
 
+    For maximum privacy (no probabilities exposed), set hard_label=True.
+    This returns only the argmax class index — useful when downstream consumers
+    don't need confidence scores and you want to fully eliminate the soft
+    probability vector the inversion attack optimises against.
+
     Parameters
     ----------
-    noise_scale : Laplace noise scale on logits (default from MI_NOISE_SCALE).
-    temperature : softmax temperature divisor  (default from MI_TEMPERATURE).
-    enabled     : master switch — False disables both defences.
+    noise_scale : Laplace noise scale on logits (default from MI_NOISE_SCALE)
+    temperature : softmax temperature divisor  (default from MI_TEMPERATURE)
+    hard_label  : return argmax only instead of softmax probabilities
+    enabled     : master switch — False disables all defences
     """
     base = get_model(input_dim, num_classes, model_type, hidden_dims=hidden_dims)
     return PrivacyWrapper(
         base_model=base,
         noise_scale=noise_scale,
         temperature=temperature,
+        hard_label=hard_label,
         enabled=enabled,
     )
