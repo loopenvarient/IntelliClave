@@ -13,6 +13,13 @@ Model Inversion Defence Changes
   rounded to 2 decimal places before being written to fl_metrics.json and
   status.json. This limits the precision of the signal available to an
   attacker who monitors per-round metrics to infer class structure.
+
+CLI Changes
+-----------
+- Added --attest flag (was missing from argparse despite being used).
+- Added --noise-scale flag to override PrivacyWrapper noise_scale at runtime
+  without editing constants.py. Lower = less noise = higher accuracy.
+- Added --temperature flag to override PrivacyWrapper temperature at runtime.
 """
 import argparse
 import json
@@ -41,7 +48,7 @@ from data_utils import (  # noqa: E402
     make_fl_round_config,
     persist_run_preprocessing,
 )
-from model import get_model, get_defended_model  # noqa: E402  ← added get_defended_model
+from model import get_model, get_defended_model  # noqa: E402
 
 # ── Sealed storage import ─────────────────────────────────────────────────────
 _SEALED_DIR = os.path.join(os.path.dirname(__file__), "..", "tee", "sealed_storage")
@@ -61,6 +68,16 @@ try:
 except ImportError:
     _CRYPTO_AVAILABLE = False
     print("[fl_server] WARNING: crypto_context not found — running without encryption.")
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Attestation import ────────────────────────────────────────────────────────
+_ATTEST_DIR = os.path.join(os.path.dirname(__file__), "..", "tee")
+sys.path.insert(0, os.path.abspath(_ATTEST_DIR))
+try:
+    from attestation_server import AttestationServer  # noqa: E402
+    _ATTEST_AVAILABLE = True
+except ImportError:
+    _ATTEST_AVAILABLE = False
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -147,6 +164,9 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         early_stopping_patience: int = 0,
         early_stopping_metric: str = "loss",
         early_stopping_min_delta: float = 1e-4,
+        # ── Privacy wrapper overrides ─────────────────────────────────────────
+        noise_scale: float = None,
+        temperature: float = None,
         # ─────────────────────────────────────────────────────────────────────
         **kwargs,
     ):
@@ -162,6 +182,10 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         self.use_crypto  = crypto_ctx is not None
         self._preprocessing_metadata = preprocessing_metadata or {}
 
+        # PrivacyWrapper overrides — None means use constants.py defaults
+        self._noise_scale = noise_scale
+        self._temperature = temperature
+
         # Early stopping state
         self._es_patience  = early_stopping_patience
         self._es_metric    = early_stopping_metric
@@ -176,6 +200,16 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         if self._es_patience > 0:
             print(f"[Server] Early stopping: patience={self._es_patience}, "
                   f"metric={self._es_metric}, min_delta={self._es_min_delta}")
+
+        # Report active PrivacyWrapper settings
+        from config.constants import MI_NOISE_SCALE, MI_TEMPERATURE
+        active_noise = self._noise_scale if self._noise_scale is not None else MI_NOISE_SCALE
+        active_temp  = self._temperature if self._temperature is not None else MI_TEMPERATURE
+        print(f"[Server][Defence] PrivacyWrapper settings — "
+              f"noise_scale={active_noise}, temperature={active_temp}"
+              + (" (from CLI)" if self._noise_scale is not None or self._temperature is not None
+                 else " (from constants.py)"))
+
         os.makedirs(save_dir, exist_ok=True)
 
     def aggregate_fit(self, server_round, results, failures):
@@ -214,22 +248,22 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         epsilons = []
         for _, fit_res in results:
             if hasattr(fit_res, "metrics") and fit_res.metrics:
-                eps = fit_res.metrics.get("epsilon")
-                cid = fit_res.metrics.get("client_id", "unknown")
+                eps   = fit_res.metrics.get("epsilon")
+                cid   = fit_res.metrics.get("client_id", "unknown")
                 delta = fit_res.metrics.get("delta")
                 if eps is not None:
                     epsilons.append({
                         "client_id": cid,
-                        "epsilon": float(eps),
-                        "delta": float(delta) if delta else None,
+                        "epsilon":   float(eps),
+                        "delta":     float(delta) if delta else None,
                     })
 
         if epsilons:
             avg_eps = sum(e["epsilon"] for e in epsilons) / len(epsilons)
             privacy_entry = {
-                "round": server_round,
+                "round":       server_round,
                 "avg_epsilon": round(avg_eps, 5),
-                "clients": epsilons,
+                "clients":     epsilons,
             }
             self.privacy_log.append(privacy_entry)
             privacy_path = os.path.join(self.save_dir, "fl_privacy.json")
@@ -247,7 +281,7 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
 
         entry = {
             "round": server_round,
-            "loss": round(float(loss), 5) if loss is not None else None,
+            "loss":  round(float(loss), 5) if loss is not None else None,
         }
         if metrics:
             for key, value in metrics.items():
@@ -299,28 +333,27 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         """
         Persist aggregated weights as a .pth checkpoint.
 
-        CHANGED: uses get_defended_model() so the saved checkpoint is already
-        wrapped in PrivacyWrapper. Any downstream code (dashboard /predict,
-        evaluate scripts) that loads global_model_latest.pth gets the defended
-        model without any extra setup.
+        Uses get_defended_model() so the saved checkpoint is already wrapped in
+        PrivacyWrapper. noise_scale and temperature are taken from CLI args if
+        provided, otherwise fall back to constants.py defaults.
 
         Weights are stored from wrapper.base_model (identical key names to the
-        old get_model() checkpoints) so loading is fully backward-compatible —
-        existing code that calls model.load_state_dict() still works.
-
-        The PrivacyWrapper itself has no trainable parameters and is not saved
-        in the state_dict; it is re-instantiated by get_defended_model() when
-        loading. Defence hyperparameters (noise_scale, temperature) come from
-        constants.py, so they are always consistent.
+        old get_model() checkpoints) so loading is fully backward-compatible.
         """
         model_type = getattr(self, "model_type", "mlp")
 
-        # Build defended wrapper — base model weights are loaded below
-        defended = get_defended_model(
-            self.input_dim,
-            self.num_classes,
+        # Build defended wrapper — use CLI overrides if provided
+        kwargs = dict(
+            input_dim=self.input_dim,
+            num_classes=self.num_classes,
             model_type=model_type,
         )
+        if self._noise_scale is not None:
+            kwargs["noise_scale"] = self._noise_scale
+        if self._temperature is not None:
+            kwargs["temperature"] = self._temperature
+
+        defended = get_defended_model(**kwargs)
 
         # Load aggregated weights into the base model only
         state_dict = {
@@ -342,19 +375,25 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
             f"temperature={defended.temperature}) — {latest_path}"
         )
 
-        # Write model metadata
+        # Write model metadata — includes active defence params
         meta_path = os.path.join(self.save_dir, "model_meta.json")
         meta = {
-            "input_dim":   self.input_dim,
-            "num_classes": self.num_classes,
-            "class_names": self.class_names,
-            "model_type":  model_type,
-            # Record defence params so inference scripts can reconstruct the
-            # exact same wrapper without guessing
+            "input_dim":      self.input_dim,
+            "num_classes":    self.num_classes,
+            "class_names":    self.class_names,
+            "model_type":     model_type,
             "mi_noise_scale": defended.noise_scale,
             "mi_temperature": defended.temperature,
         }
         with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2)
+
+        # Also update root-level model_meta.json so attack/eval scripts find it
+        root_meta_path = os.path.join(
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+            "model_meta.json",
+        )
+        with open(root_meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, indent=2)
 
         # Save preprocessing metadata alongside checkpoint
@@ -425,7 +464,6 @@ def monitor_client_distributions(
       - A recommendation on whether FedProx is likely needed
 
     Saves distribution_report.json to save_dir if provided.
-    Call this before training to understand your data heterogeneity.
     """
     from scipy.stats import entropy as kl_divergence
 
@@ -439,7 +477,6 @@ def monitor_client_distributions(
         all_labels.update(counts.keys())
 
     all_labels = sorted(all_labels, key=str)
-    n_classes  = len(all_labels)
 
     eps = 1e-8
     prob_vectors = {}
@@ -501,7 +538,7 @@ def monitor_client_distributions(
             for name, counts in client_dists.items()
         },
         "kl_divergence": kl_scores,
-        "avg_kl": avg_kl,
+        "avg_kl":        avg_kl,
         "recommendation": recommendation,
     }
 
@@ -551,6 +588,8 @@ def build_strategy(
     preprocessing_metadata: Optional[Dict] = None,
     global_mean: Optional[np.ndarray] = None,
     global_std: Optional[np.ndarray] = None,
+    noise_scale: float = None,
+    temperature: float = None,
 ) -> "SaveModelStrategy":
     """Build the FL aggregation strategy."""
     round_config = make_fl_round_config(local_epochs, global_mean, global_std)
@@ -581,6 +620,8 @@ def build_strategy(
         early_stopping_patience=early_stopping_patience,
         early_stopping_metric=early_stopping_metric,
         early_stopping_min_delta=early_stopping_min_delta,
+        noise_scale=noise_scale,
+        temperature=temperature,
     )
 
     name = strategy_name.lower()
@@ -611,6 +652,7 @@ def start_server(
     server_address: str = "0.0.0.0:8080",
     save_dir: str = "",
     use_crypto: bool = False,
+    use_attest: bool = False,
     strategy_name: str = "fedavg",
     fraction_fit: float = 1.0,
     proximal_mu: float = 1.0,
@@ -618,7 +660,16 @@ def start_server(
     early_stopping_metric: str = "loss",
     monitor_distributions: bool = True,
     model_type: str = "mlp",
+    noise_scale: float = None,
+    temperature: float = None,
 ):
+    # ── Attestation ───────────────────────────────────────────────────────────
+    if use_attest and _ATTEST_AVAILABLE:
+        attest_server = AttestationServer()
+        attest_server.generate_quote()
+    elif use_attest:
+        print("[Server][Attest] WARNING: attestation module not found — skipping.")
+
     if not save_dir:
         save_dir = make_timestamped_save_dir()
     os.makedirs(save_dir, exist_ok=True)
@@ -633,7 +684,8 @@ def start_server(
         first_csv = get_default_client_csvs()[0]
         if os.path.exists(first_csv):
             class_names = infer_class_names(first_csv)
-            print(f"[Server] Inferred class_names={class_names} from {os.path.basename(first_csv)}")
+            print(f"[Server] Inferred class_names={class_names} "
+                  f"from {os.path.basename(first_csv)}")
 
     csv_paths = get_default_client_csvs()
     existing_csvs = [p for p in csv_paths if os.path.exists(p)]
@@ -669,8 +721,8 @@ def start_server(
     preprocessing_metadata = {}
     if global_mean is not None and global_std is not None:
         preprocessing_metadata = {
-            "mean": global_mean.tolist() if hasattr(global_mean, "tolist") else global_mean,
-            "std": global_std.tolist() if hasattr(global_std, "tolist") else global_std,
+            "mean":          global_mean.tolist() if hasattr(global_mean, "tolist") else global_mean,
+            "std":           global_std.tolist()  if hasattr(global_std,  "tolist") else global_std,
             "normalization": "global",
         }
         if existing_csvs:
@@ -706,7 +758,10 @@ def start_server(
         preprocessing_metadata=preprocessing_metadata,
         global_mean=global_mean,
         global_std=global_std,
+        noise_scale=noise_scale,
+        temperature=temperature,
     )
+
     fl.server.start_server(
         server_address=server_address,
         config=fl.server.ServerConfig(num_rounds=num_rounds),
@@ -726,15 +781,17 @@ def _write_run_summary(save_dir: str, strategy: "SaveModelStrategy") -> None:
     round_log = strategy.round_log
     last = round_log[-1] if round_log else {}
     status = {
-        "round":        last.get("round", 0),
-        "total_rounds": len(round_log),
-        "clients":      strategy.min_available_clients,
-        "loss":         last.get("loss"),
-        "accuracy":     last.get("accuracy"),
-        "macro_f1":     last.get("macro_f1"),
-        "save_dir":     save_dir,
-        "model_type":   strategy.model_type,
+        "round":         last.get("round", 0),
+        "total_rounds":  len(round_log),
+        "clients":       strategy.min_available_clients,
+        "loss":          last.get("loss"),
+        "accuracy":      last.get("accuracy"),
+        "macro_f1":      last.get("macro_f1"),
+        "save_dir":      save_dir,
+        "model_type":    strategy.model_type,
         "early_stopped": strategy._es_triggered,
+        "noise_scale":   strategy._noise_scale,
+        "temperature":   strategy._temperature,
     }
     status_path = os.path.join(_root, "status.json")
     with open(status_path, "w", encoding="utf-8") as f:
@@ -768,16 +825,16 @@ def _write_run_summary(save_dir: str, strategy: "SaveModelStrategy") -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input-dim", type=int, default=infer_default_input_dim())
+    parser.add_argument("--input-dim",  type=int, default=infer_default_input_dim())
     parser.add_argument("--num-classes", type=int, default=0,
                         help="Number of output classes. Inferred from data if not set.")
-    parser.add_argument("--rounds", type=int, default=10)
+    parser.add_argument("--rounds",     type=int, default=10)
     parser.add_argument("--min-clients", type=int, default=3)
     parser.add_argument("--local-epochs", type=int, default=1)
-    parser.add_argument("--address", default="0.0.0.0:8080")
-    parser.add_argument("--save-dir", default="",
+    parser.add_argument("--address",    default="0.0.0.0:8080")
+    parser.add_argument("--save-dir",   default="",
                         help="Output directory. Auto-generates a timestamped path if not set.")
-    parser.add_argument("--strategy", default="fedavg", choices=["fedavg", "fedprox"],
+    parser.add_argument("--strategy",   default="fedavg", choices=["fedavg", "fedprox"],
                         help="Aggregation strategy (default: fedavg).")
     parser.add_argument("--fraction-fit", type=float, default=1.0,
                         help="Fraction of clients sampled per round (default: 1.0 = all).")
@@ -795,7 +852,18 @@ if __name__ == "__main__":
                         help="Skip the pre-training distribution report.")
     parser.add_argument("--crypto", action="store_true",
                         help="Enable AES-256-GCM + RSA weight encryption.")
+    parser.add_argument("--attest", action="store_true",
+                        help="Enable SGX attestation before starting.")
+    parser.add_argument("--noise-scale", type=float, default=None,
+                        help="PrivacyWrapper Laplace noise scale on logits. "
+                             "Lower = less noise = higher accuracy. "
+                             "Default: value from config/constants.py (MI_NOISE_SCALE).")
+    parser.add_argument("--temperature", type=float, default=None,
+                        help="PrivacyWrapper softmax temperature divisor. "
+                             "Lower = sharper predictions. "
+                             "Default: value from config/constants.py (MI_TEMPERATURE).")
     args = parser.parse_args()
+
     start_server(
         input_dim=args.input_dim,
         num_classes=args.num_classes,
@@ -805,6 +873,7 @@ if __name__ == "__main__":
         server_address=args.address,
         save_dir=args.save_dir,
         use_crypto=args.crypto,
+        use_attest=args.attest,
         strategy_name=args.strategy,
         fraction_fit=args.fraction_fit,
         proximal_mu=args.proximal_mu,
@@ -812,4 +881,6 @@ if __name__ == "__main__":
         early_stopping_patience=args.early_stopping_patience,
         early_stopping_metric=args.early_stopping_metric,
         monitor_distributions=not args.no_distribution_monitor,
+        noise_scale=args.noise_scale,
+        temperature=args.temperature,
     )

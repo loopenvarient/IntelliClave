@@ -50,6 +50,14 @@ if __name__ == "__main__":
                         help="Enable AES-256-GCM + RSA weight encryption.")
     parser.add_argument("--attest", action="store_true",
                         help="Run SGX attestation before starting the FL server.")
+    parser.add_argument("--noise-scale", type=float, default=None,
+                        help="PrivacyWrapper Laplace noise scale on logits. "
+                             "Lower = less noise = higher accuracy. "
+                             "Default: value from config/constants.py (MI_NOISE_SCALE).")
+    parser.add_argument("--temperature", type=float, default=None,
+                        help="PrivacyWrapper softmax temperature divisor. "
+                             "Lower = sharper predictions. "
+                             "Default: value from config/constants.py (MI_TEMPERATURE).")
     args = parser.parse_args()
 
     if args.attest:
@@ -75,4 +83,6 @@ if __name__ == "__main__":
         early_stopping_patience=args.early_stopping_patience,
         early_stopping_metric=args.early_stopping_metric,
         monitor_distributions=not args.no_distribution_monitor,
+        noise_scale=args.noise_scale,
+        temperature=args.temperature,
     )

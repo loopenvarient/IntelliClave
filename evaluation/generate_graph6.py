@@ -27,6 +27,7 @@ import os
 import sys
 
 import matplotlib
+from xgboost import cv
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
@@ -246,9 +247,18 @@ def main(op_epsilon: float = DEFAULT_EPSILON,
         label = entry.get('client_name') or entry.get('client_id') or k
         cv_labels.append(str(label).replace(" ", "\n"))
 
-    cv_means = [cv[k]['summary']['accuracy']['mean'] * 100 for k in cv_keys]
-    cv_stds  = [cv[k]['summary']['accuracy']['std']  * 100 for k in cv_keys]
-    cv_auc   = [cv[k]['summary']['auc_roc']['mean']  * 100 for k in cv_keys]
+    # NEW — safely handles None auc_roc
+    def _safe_pct(summary, metric, stat='mean', default=0.0):
+        """Return summary[metric][stat] * 100, or default if missing/None."""
+        block = summary.get(metric) if summary else None
+        if block is None:
+            return default
+        val = block.get(stat)
+        return val * 100 if val is not None else default
+    
+    cv_means = [_safe_pct(cv[k]['summary'], 'accuracy', 'mean') for k in cv_keys]
+    cv_stds  = [_safe_pct(cv[k]['summary'], 'accuracy', 'std')  for k in cv_keys]
+    cv_auc   = [_safe_pct(cv[k]['summary'], 'auc_roc',  'mean') for k in cv_keys]
 
     x = np.arange(len(cv_keys))
     w = 0.35
