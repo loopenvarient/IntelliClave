@@ -37,7 +37,12 @@ _here = os.path.dirname(os.path.abspath(__file__))
 ROOT  = os.path.abspath(os.path.join(_here, '..', '..'))
 sys.path.insert(0, os.path.join(ROOT, 'fl'))
 sys.path.insert(0, os.path.join(ROOT, 'config'))
-from data_utils import infer_default_preprocessing, load_preprocessing_metadata  # noqa: E402
+from data_utils import (  # noqa: E402
+    get_default_client_csvs,
+    infer_default_preprocessing,
+    load_csv_data,
+    load_preprocessing_metadata,
+)
 from model import get_defended_model  # noqa: E402  ← replaces bare get_model
 
 # ── Defence constants — override via env vars in production ───────────────────
@@ -166,6 +171,7 @@ def _check_predict_rate_limit(client_ip: str):
 
 # ── Model loader with staleness detection ─────────────────────────────────────
 _model_cache: dict = {}
+_eval_cache: dict = {}
 
 
 def _find_latest_model_path() -> str:
@@ -325,6 +331,9 @@ class StatusResponse(BaseModel):
     early_stopped: Optional[bool] = None
     epsilon: Optional[float] = None
     training_active: Optional[bool] = False
+    noise_scale: Optional[float] = None
+    temperature: Optional[float] = None
+    client_distribution: Optional[Dict[str, Any]] = None
 
 
 class ResultsResponse(BaseModel):
@@ -335,9 +344,12 @@ class ResultsResponse(BaseModel):
 
 class AttackSummary(BaseModel):
     verdict: Optional[str] = None
+    verdict_short: Optional[str] = None
     avg_cosine_similarity: Optional[float] = None
     auc: Optional[float] = None
+    avg_auc: Optional[float] = None
     accuracy_drop: Optional[float] = None
+    accuracy_drop_pct: Optional[float] = None
 
 
 class AttacksResponse(BaseModel):
@@ -361,6 +373,214 @@ def _read_json(rel_path: str) -> dict:
         return json.load(f)
 
 
+def _read_json_optional(rel_path: str) -> Optional[dict]:
+    path = os.path.join(ROOT, rel_path)
+    if not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _get_save_dir(status_obj: Optional[dict] = None) -> str:
+    if status_obj and status_obj.get("save_dir"):
+        candidate = os.path.join(ROOT, status_obj["save_dir"])
+        if os.path.isdir(candidate):
+            return candidate
+    return os.path.dirname(_find_latest_model_path())
+
+
+def _short_verdict(verdict: Optional[str]) -> str:
+    if not verdict:
+        return "—"
+    for sep in (" \u2014 ", " — ", " - "):
+        if sep in verdict:
+            return verdict.split(sep)[0].strip()
+    return verdict.strip()
+
+
+def _normalize_attack_summary(raw: Optional[dict]) -> Optional[dict]:
+    if not raw:
+        return None
+    summary = dict(raw)
+    if summary.get("avg_auc") is not None and summary.get("auc") is None:
+        summary["auc"] = summary["avg_auc"]
+    drop = summary.get("accuracy_drop")
+    if drop is not None:
+        drop_val = float(drop)
+        summary["accuracy_drop_pct"] = (
+            round(drop_val * 100, 2) if drop_val <= 1.0 else round(drop_val, 2)
+        )
+    summary["verdict_short"] = _short_verdict(summary.get("verdict"))
+    return summary
+
+
+def _load_client_info(save_dir: str, n_clients: int) -> List[dict]:
+    dist_path = os.path.join(save_dir, "distribution_report.json")
+    if not os.path.exists(dist_path):
+        return [
+            {"id": f"Client {i + 1}", "client_id": i + 1, "status": "ready", "samples": 0}
+            for i in range(n_clients)
+        ]
+
+    with open(dist_path, encoding="utf-8") as f:
+        dist = json.load(f)
+
+    counts = dist.get("counts_per_client", {})
+    kl_map = dist.get("kl_divergence", {})
+    client_files = dist.get("clients") or list(counts.keys())
+
+    clients = []
+    for i, client_file in enumerate(client_files):
+        class_counts = counts.get(client_file, {})
+        samples = sum(int(v) for v in class_counts.values())
+        kl_val = kl_map.get(client_file)
+        clients.append({
+            "id": f"Client {i + 1}",
+            "client_id": i + 1,
+            "status": "ready",
+            "samples": samples,
+            "kl_divergence": round(float(kl_val), 4) if kl_val is not None else None,
+        })
+    return clients
+
+
+def _load_client_distribution(save_dir: str) -> Optional[dict]:
+    dist_path = os.path.join(save_dir, "distribution_report.json")
+    if not os.path.exists(dist_path):
+        return None
+
+    with open(dist_path, encoding="utf-8") as f:
+        dist = json.load(f)
+
+    classes = [str(c) for c in dist.get("classes", [])]
+    counts = dist.get("counts_per_client", {})
+    client_files = dist.get("clients") or list(counts.keys())
+
+    chart_data = []
+    for cls in classes:
+        row = {"cls": f"C{cls}"}
+        for i, client_file in enumerate(client_files):
+            client_counts = counts.get(client_file, {})
+            row[f"c{i + 1}"] = int(client_counts.get(cls, client_counts.get(int(cls), 0)))
+        chart_data.append(row)
+
+    kl_map = dist.get("kl_divergence", {})
+    return {
+        "classes": classes,
+        "clients": [f"Client {i + 1}" for i in range(len(client_files))],
+        "chart_data": chart_data,
+        "kl_divergence": {
+            f"Client {i + 1}": round(float(kl_map[cf]), 4)
+            for i, cf in enumerate(client_files)
+            if cf in kl_map
+        },
+        "avg_kl": dist.get("avg_kl"),
+    }
+
+
+def _merge_privacy_into_rounds(rounds: List[dict], save_dir: str) -> List[dict]:
+    eps_by_round: Dict[int, float] = {}
+
+    privacy_path = os.path.join(save_dir, "fl_privacy.json")
+    if os.path.exists(privacy_path):
+        with open(privacy_path, encoding="utf-8") as f:
+            privacy_log = json.load(f)
+        if isinstance(privacy_log, list):
+            for entry in privacy_log:
+                if not isinstance(entry, dict):
+                    continue
+                rnd = entry.get("round")
+                eps = entry.get("avg_epsilon") or entry.get("epsilon")
+                if rnd is not None and eps is not None:
+                    eps_by_round[int(rnd)] = float(eps)
+
+    if not eps_by_round:
+        eps_rounds = _read_json_optional("results/epsilon_rounds.json")
+        if isinstance(eps_rounds, list):
+            for entry in eps_rounds:
+                if not isinstance(entry, dict):
+                    continue
+                rnd = entry.get("fl_round") or entry.get("round")
+                eps = (
+                    entry.get("epsilon_consumed")
+                    or entry.get("epsilon")
+                    or entry.get("actual_epsilon")
+                )
+                if rnd is not None and eps is not None:
+                    eps_by_round[int(rnd)] = float(eps)
+
+    enriched = []
+    for row in rounds:
+        merged = dict(row)
+        rnd = merged.get("round")
+        if rnd is not None and int(rnd) in eps_by_round and merged.get("epsilon") is None:
+            merged["epsilon"] = eps_by_round[int(rnd)]
+        enriched.append(merged)
+    return enriched
+
+
+def _compute_per_class_f1() -> Optional[Dict[str, float]]:
+    try:
+        from sklearn.metrics import f1_score
+
+        model_path = _find_latest_model_path()
+        if not os.path.exists(model_path):
+            return None
+
+        mtime = os.path.getmtime(model_path)
+        if _eval_cache.get("mtime") == mtime and _eval_cache.get("per_class_f1"):
+            return _eval_cache["per_class_f1"]
+
+        wrapper, meta, preprocessing = _get_model()
+        wrapper.eval()
+
+        global_mean = preprocessing["mean"] if preprocessing else None
+        global_std = preprocessing["std"] if preprocessing else None
+        num_classes = meta["num_classes"]
+        class_names = meta["class_names"]
+
+        all_true: List[int] = []
+        all_pred: List[int] = []
+        for csv_path in get_default_client_csvs():
+            if not os.path.exists(csv_path):
+                continue
+            _, test_loader, _ = load_csv_data(
+                csv_path,
+                batch_size=64,
+                global_mean=global_mean,
+                global_std=global_std,
+                num_classes=num_classes,
+                class_names=class_names,
+            )
+            with torch.no_grad():
+                for x_batch, y_batch in test_loader:
+                    outputs = wrapper(x_batch)
+                    preds = torch.argmax(outputs, dim=1).cpu().numpy()
+                    all_pred.extend(preds.tolist())
+                    all_true.extend(y_batch.numpy().tolist())
+
+        if not all_true:
+            return None
+
+        per_class = f1_score(
+            all_true,
+            all_pred,
+            average=None,
+            zero_division=0,
+            labels=list(range(num_classes)),
+        )
+        result = {
+            class_names[i]: round(float(v), 4)
+            for i, v in enumerate(per_class)
+        }
+        _eval_cache["mtime"] = mtime
+        _eval_cache["per_class_f1"] = result
+        return result
+    except Exception as exc:
+        print(f"[Dashboard] per_class_f1 evaluation failed: {exc}")
+        return None
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -382,9 +602,20 @@ async def token(request: Request):
 @app.get("/status", response_model=StatusResponse)
 def status(user=Depends(get_current_user)):
     status_obj = _read_json("status.json")
+    save_dir = _get_save_dir(status_obj)
     clients = status_obj.get("clients")
     if isinstance(clients, int):
-        status_obj["clients"] = [{"client_id": i + 1} for i in range(clients)]
+        status_obj["clients"] = _load_client_info(save_dir, clients)
+    elif isinstance(clients, list):
+        needs_enrichment = (
+            not clients
+            or all(not c.get("samples") for c in clients if isinstance(c, dict))
+        )
+        if needs_enrichment:
+            n_clients = len(clients) if clients else 3
+            status_obj["clients"] = _load_client_info(save_dir, n_clients)
+
+    status_obj["client_distribution"] = _load_client_distribution(save_dir)
 
     if "epsilon" not in status_obj:
         try:
@@ -418,7 +649,20 @@ def status(user=Depends(get_current_user)):
 
 @app.get("/results", response_model=ResultsResponse)
 def results(user=Depends(get_current_user)):
-    return _read_json("results/results.json")
+    data = _read_json("results/results.json")
+    status_obj = _read_json_optional("status.json") or {}
+    save_dir = _get_save_dir(status_obj)
+
+    rounds = data.get("rounds") or []
+    if rounds:
+        data["rounds"] = _merge_privacy_into_rounds(rounds, save_dir)
+
+    if not data.get("per_class_f1"):
+        per_class = _compute_per_class_f1()
+        if per_class:
+            data["per_class_f1"] = per_class
+
+    return data
 
 
 @app.get("/attestation")
@@ -533,20 +777,37 @@ def predict(payload: PredictRequest, request: Request, user=Depends(require_auth
     )
 
 
+def _resolve_attack_file(key: str) -> Optional[str]:
+    candidates = {
+        "model_inversion": (
+            ["results/attacks/model_inversion_defended.json", "results/attacks/model_inversion.json"]
+            if _defence_on
+            else ["results/attacks/model_inversion.json", "results/attacks/model_inversion_defended.json"]
+        ),
+        "membership_inference": ["results/attacks/membership_inference.json"],
+        "gradient_poisoning": [
+            "results/attacks/gradient_poisoning_robust.json",
+            "results/attacks/gradient_poisoning.json",
+        ],
+    }.get(key, [])
+    for rel_path in candidates:
+        if os.path.exists(os.path.join(ROOT, rel_path)):
+            return rel_path
+    return None
+
+
 @app.get("/attacks", response_model=AttacksResponse)
 def attacks(user=Depends(get_current_user)):
     out = {}
-    attack_files = {
-        "model_inversion":      "results/attacks/model_inversion.json",
-        "membership_inference": "results/attacks/membership_inference.json",
-        "gradient_poisoning":   "results/attacks/gradient_poisoning.json",
-    }
-    for key, rel_path in attack_files.items():
-        path = os.path.join(ROOT, rel_path)
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
+    for key in ("model_inversion", "membership_inference", "gradient_poisoning"):
+        rel_path = _resolve_attack_file(key)
+        if rel_path:
+            with open(os.path.join(ROOT, rel_path), encoding="utf-8") as f:
                 data = json.load(f)
-            out[key] = data.get("summary", {})
+            summary = _normalize_attack_summary(data.get("summary", {}))
+            if summary is not None:
+                summary["source_file"] = rel_path
+            out[key] = summary
         else:
             out[key] = None
     return out

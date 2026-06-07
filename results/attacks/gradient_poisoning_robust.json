@@ -1,0 +1,96 @@
+{
+  "attack": "gradient_poisoning",
+  "mode": "robust (trimmed_mean)",
+  "config": {
+    "fl_rounds": 5,
+    "local_epochs": 3,
+    "aggregation": "trimmed_mean",
+    "poisoned_client": 1,
+    "poison_target_class": 1,
+    "poison_target_name": "class_2"
+  },
+  "sweep": [
+    {
+      "accuracy": 0.819505,
+      "macro_f1": 0.823829,
+      "per_class_f1": {
+        "class_1": 0.870968,
+        "class_2": 0.853571,
+        "class_3": 0.80117,
+        "class_4": 0.757259,
+        "class_5": 0.849508,
+        "class_6": 0.810496
+      },
+      "poison_rate": 0.0,
+      "n_poisoned_labels": 0
+    },
+    {
+      "accuracy": 0.80786,
+      "macro_f1": 0.806663,
+      "per_class_f1": {
+        "class_1": 0.790941,
+        "class_2": 0.797753,
+        "class_3": 0.742706,
+        "class_4": 0.78853,
+        "class_5": 0.79879,
+        "class_6": 0.92126
+      },
+      "poison_rate": 0.1,
+      "n_poisoned_labels": 442
+    },
+    {
+      "accuracy": 0.854925,
+      "macro_f1": 0.853451,
+      "per_class_f1": {
+        "class_1": 0.84193,
+        "class_2": 0.843585,
+        "class_3": 0.793696,
+        "class_4": 0.842653,
+        "class_5": 0.883721,
+        "class_6": 0.915119
+      },
+      "poison_rate": 0.3,
+      "n_poisoned_labels": 1326
+    },
+    {
+      "accuracy": 0.839884,
+      "macro_f1": 0.838909,
+      "per_class_f1": {
+        "class_1": 0.841402,
+        "class_2": 0.822669,
+        "class_3": 0.773481,
+        "class_4": 0.817043,
+        "class_5": 0.850941,
+        "class_6": 0.927916
+      },
+      "poison_rate": 0.5,
+      "n_poisoned_labels": 2211
+    },
+    {
+      "accuracy": 0.809316,
+      "macro_f1": 0.812735,
+      "per_class_f1": {
+        "class_1": 0.825503,
+        "class_2": 0.84153,
+        "class_3": 0.767313,
+        "class_4": 0.769053,
+        "class_5": 0.830904,
+        "class_6": 0.842105
+      },
+      "poison_rate": 1.0,
+      "n_poisoned_labels": 4423
+    }
+  ],
+  "summary": {
+    "baseline_accuracy": 0.819505,
+    "baseline_macro_f1": 0.823829,
+    "full_poison_accuracy": 0.809316,
+    "full_poison_macro_f1": 0.812735,
+    "accuracy_drop": 0.010189,
+    "f1_drop": 0.011094,
+    "risk_level": "LOW",
+    "verdict": "RESISTANT \u2014 robust aggregation rejects the poisoned client update",
+    "mitigation_note": "Defence active: trimmed_mean aggregation. Outlier client weight updates are excluded or down-weighted before forming the global model, limiting Byzantine label-flip impact.",
+    "aggregation": "trimmed_mean"
+  }
+}

@@ -22,7 +22,8 @@ Threat model (STRIDE: Tampering):
   deliberately degrade a rival's model quality.
 
 Output:
-  results/attacks/gradient_poisoning.json
+  results/attacks/gradient_poisoning.json         (FedAvg baseline — shows vulnerability)
+  results/attacks/gradient_poisoning_robust.json  (--robust: trimmed_mean defence)
 """
 
 import json
@@ -63,7 +64,8 @@ CLIENT_CSVS   = sorted(
     for f in os.listdir(PROCESSED_DIR)
     if f.endswith(".csv")
 ) if os.path.isdir(PROCESSED_DIR) else []
-OUT_PATH   = os.path.join(_ROOT, "results", "attacks", "gradient_poisoning.json")
+OUT_PATH        = os.path.join(_ROOT, "results", "attacks", "gradient_poisoning.json")
+OUT_PATH_ROBUST = os.path.join(_ROOT, "results", "attacks", "gradient_poisoning_robust.json")
 FL_ROUNDS  = 5
 LOCAL_EPOCHS = 3
 BATCH_SIZE = 32
@@ -203,6 +205,64 @@ def fedavg(weight_list: List[List[np.ndarray]],
     return avg
 
 
+def coordinate_median(weight_list: List[List[np.ndarray]]) -> List[np.ndarray]:
+    """
+    Coordinate-wise median across client weight tensors.
+
+    With 3 clients and 1 Byzantine participant, the median per weight
+    rejects the outlier client's extreme values — a standard robust
+    aggregation rule (related to geometric median / Bulyan family).
+    """
+    if len(weight_list) == 1:
+        return weight_list[0]
+    return [
+        np.median(
+            np.stack([weights[i] for weights in weight_list], axis=0),
+            axis=0,
+        ).astype(weight_list[0][i].dtype)
+        for i in range(len(weight_list[0]))
+    ]
+
+
+def trimmed_mean(weight_list: List[List[np.ndarray]],
+                 sizes: List[int],
+                 trim_count: int = 1) -> List[np.ndarray]:
+    """
+    Drop the client updates farthest from the centroid, then FedAvg the rest.
+
+    With 3 clients, trim_count=1 removes the most outlying poisoned update.
+    """
+    if len(weight_list) <= trim_count:
+        return fedavg(weight_list, sizes)
+
+    flats = [
+        np.concatenate([layer.flatten() for layer in weights])
+        for weights in weight_list
+    ]
+    centroid = np.mean(flats, axis=0)
+    ranked = sorted(
+        range(len(flats)),
+        key=lambda idx: float(np.linalg.norm(flats[idx] - centroid)),
+        reverse=True,
+    )
+    drop = set(ranked[:trim_count])
+    kept_weights = [weight_list[i] for i in range(len(weight_list)) if i not in drop]
+    kept_sizes   = [sizes[i] for i in range(len(sizes)) if i not in drop]
+    return fedavg(kept_weights, kept_sizes)
+
+
+def aggregate_updates(weight_list: List[List[np.ndarray]],
+                      sizes: List[int],
+                      strategy: str = "fedavg") -> List[np.ndarray]:
+    name = strategy.lower().replace("-", "_")
+    if name in ("median", "coordinate_median", "coord_median"):
+        return coordinate_median(weight_list)
+    if name in ("trimmed_mean", "trimmed", "trim"):
+        trim = max(1, len(weight_list) // 5)  # ~20% trimmed; 1 of 3 clients
+        return trimmed_mean(weight_list, sizes, trim_count=trim)
+    return fedavg(weight_list, sizes)
+
+
 def evaluate_global(model, test_loaders: List[DataLoader]) -> Tuple[float, float]:
     """Evaluate global model on all clients' test sets combined."""
     model.eval()
@@ -226,9 +286,10 @@ def run_fl(poison_rate: float = 0.0,
            local_epochs: int = LOCAL_EPOCHS,
            batch_size: int = BATCH_SIZE,
            lr: float = LR,
-           poison_target: int = POISON_TARGET) -> dict:
+           poison_target: int = POISON_TARGET,
+           aggregation: str = "fedavg") -> dict:
     """
-    Run a full FL simulation with FedAvg for fl_rounds rounds.
+    Run a full FL simulation for fl_rounds rounds.
     Client at poisoned_client_idx has poison_rate fraction of labels flipped.
     Returns final accuracy, macro F1, and per-class F1.
     """
@@ -264,7 +325,9 @@ def run_fl(poison_rate: float = 0.0,
             local_weights.append(get_weights(local_model))
             local_sizes.append(n_tr)
 
-        global_weights = fedavg(local_weights, local_sizes)
+        global_weights = aggregate_updates(
+            local_weights, local_sizes, strategy=aggregation
+        )
         set_weights(global_model, global_weights)
 
     acc, f1, per_cls = evaluate_global(global_model, test_loaders)
@@ -275,6 +338,56 @@ def run_fl(poison_rate: float = 0.0,
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+def _build_summary(baseline: dict, full_poison: dict, aggregation: str) -> dict:
+    acc_drop_full = baseline["accuracy"] - full_poison["accuracy"]
+    f1_drop_full  = baseline["macro_f1"]  - full_poison["macro_f1"]
+
+    risk = ("HIGH"   if acc_drop_full > 0.10 else
+            "MEDIUM" if acc_drop_full > 0.03 else
+            "LOW")
+
+    robust = aggregation.lower() not in ("fedavg", "avg", "average")
+    if risk == "HIGH":
+        verdict = (
+            "VULNERABLE — a single poisoned client significantly degrades the global model"
+        )
+    elif risk == "MEDIUM":
+        verdict = "MODERATE — poisoning causes measurable but limited degradation"
+    elif robust:
+        verdict = (
+            "RESISTANT — robust aggregation rejects the poisoned client update"
+        )
+    else:
+        verdict = "RESISTANT — FedAvg dilutes the poisoned updates effectively"
+
+    if robust:
+        mitigation_note = (
+            f"Defence active: {aggregation} aggregation. "
+            "Outlier client weight updates are excluded or down-weighted before "
+            "forming the global model, limiting Byzantine label-flip impact."
+        )
+    else:
+        mitigation_note = (
+            "FedAvg is known to be vulnerable to Byzantine attacks. "
+            "Mitigations include: robust aggregation (coordinate median, "
+            "Trimmed Mean), anomaly detection on client updates, and DP-SGD "
+            "gradient clipping which limits the influence of any single update."
+        )
+
+    return {
+        "baseline_accuracy":    baseline["accuracy"],
+        "baseline_macro_f1":    baseline["macro_f1"],
+        "full_poison_accuracy": full_poison["accuracy"],
+        "full_poison_macro_f1": full_poison["macro_f1"],
+        "accuracy_drop":        round(float(acc_drop_full), 6),
+        "f1_drop":              round(float(f1_drop_full), 6),
+        "risk_level":           risk,
+        "verdict":              verdict,
+        "mitigation_note":      mitigation_note,
+        "aggregation":          aggregation,
+    }
+
+
 def main(
     fl_rounds: int = FL_ROUNDS,
     local_epochs: int = LOCAL_EPOCHS,
@@ -284,6 +397,7 @@ def main(
     poison_rates: list = None,
     poisoned_client_idx: int = 0,
     out_path: str = OUT_PATH,
+    aggregation: str = "fedavg",
 ):
     if poison_rates is None:
         poison_rates = POISON_RATES
@@ -291,6 +405,7 @@ def main(
     print("=" * 55)
     print("Attack 3: Gradient Poisoning (Label-Flip)")
     print(f"  FL rounds: {fl_rounds}  |  Local epochs: {local_epochs}")
+    print(f"  Aggregation: {aggregation}")
     print(f"  Poisoned client: Client {poisoned_client_idx + 1}")
     print(f"  Flip target: class {poison_target} ({CLASS_NAMES[poison_target] if poison_target < len(CLASS_NAMES) else poison_target})")
     print("=" * 55)
@@ -304,6 +419,7 @@ def main(
         batch_size=batch_size,
         lr=lr,
         poison_target=poison_target,
+        aggregation=aggregation,
     )
     print(f"    Accuracy : {baseline['accuracy']:.4f}")
     print(f"    Macro F1 : {baseline['macro_f1']:.4f}")
@@ -326,6 +442,7 @@ def main(
                 batch_size=batch_size,
                 lr=lr,
                 poison_target=poison_target,
+                aggregation=aggregation,
             )
             result["poison_rate"] = rate
             # approximate poisoned label count
@@ -338,49 +455,29 @@ def main(
             acc_drop = baseline["accuracy"] - result["accuracy"]
             f1_drop  = baseline["macro_f1"] - result["macro_f1"]
             print(f"acc={result['accuracy']:.4f} "
-                  f"(Δ={-acc_drop:+.4f})  "
+                  f"(d={-acc_drop:+.4f})  "
                   f"f1={result['macro_f1']:.4f} "
-                  f"(Δ={-f1_drop:+.4f})")
+                  f"(d={-f1_drop:+.4f})")
 
         sweep_results.append(result)
 
     # ── risk assessment ───────────────────────────────────────────────────────
     full_poison = next(r for r in sweep_results if r["poison_rate"] == 1.0)
     acc_drop_full = baseline["accuracy"] - full_poison["accuracy"]
-    f1_drop_full  = baseline["macro_f1"]  - full_poison["macro_f1"]
-
-    risk = ("HIGH"   if acc_drop_full > 0.10 else
-            "MEDIUM" if acc_drop_full > 0.03 else
-            "LOW")
-
-    summary = {
-        "baseline_accuracy":    baseline["accuracy"],
-        "baseline_macro_f1":    baseline["macro_f1"],
-        "full_poison_accuracy": full_poison["accuracy"],
-        "full_poison_macro_f1": full_poison["macro_f1"],
-        "accuracy_drop":        round(float(acc_drop_full), 6),
-        "f1_drop":              round(float(f1_drop_full), 6),
-        "risk_level":           risk,
-        "verdict": (
-            "VULNERABLE — a single poisoned client significantly degrades the global model"
-            if risk == "HIGH" else
-            "MODERATE — poisoning causes measurable but limited degradation"
-            if risk == "MEDIUM" else
-            "RESISTANT — FedAvg dilutes the poisoned updates effectively"
-        ),
-        "mitigation_note": (
-            "FedAvg is known to be vulnerable to Byzantine attacks. "
-            "Mitigations include: robust aggregation (Krum, Trimmed Mean), "
-            "anomaly detection on client updates, and DP-SGD which limits "
-            "the influence of any single gradient."
-        ),
-    }
+    summary = _build_summary(baseline, full_poison, aggregation)
+    risk = summary["risk_level"]
 
     output = {
         "attack":        "gradient_poisoning",
+        "mode":          (
+            f"robust ({aggregation})"
+            if aggregation.lower() not in ("fedavg", "avg", "average")
+            else "fedavg (baseline)"
+        ),
         "config": {
             "fl_rounds":          fl_rounds,
             "local_epochs":       local_epochs,
+            "aggregation":        aggregation,
             "poisoned_client":    poisoned_client_idx + 1,
             "poison_target_class": poison_target,
             "poison_target_name": CLASS_NAMES[poison_target] if poison_target < len(CLASS_NAMES) else str(poison_target),
@@ -401,7 +498,7 @@ def main(
     print(f"  Risk      : {risk}")
     print(f"  Verdict   : {summary['verdict']}")
     print(f"{'='*55}")
-    print(f"\n✅ Saved → {out_path}")
+    print(f"\nSaved -> {out_path}")
 
 
 if __name__ == "__main__":
@@ -425,9 +522,21 @@ if __name__ == "__main__":
                         help="Poison rate values to sweep (e.g. 0.0 0.1 0.5 1.0).")
     parser.add_argument("--poisoned-client", type=int, default=0,
                         help="0-based index of the client to poison.")
+    parser.add_argument("--aggregation", default="fedavg",
+                        choices=["fedavg", "coordinate_median", "trimmed_mean"],
+                        help="Server aggregation strategy.")
     parser.add_argument("--out", default=OUT_PATH,
                         help="Output JSON path.")
+    parser.add_argument("--robust", action="store_true",
+                        help="Shortcut: coordinate_median aggregation → gradient_poisoning_robust.json")
     args = parser.parse_args()
+
+    aggregation = args.aggregation
+    out_path = args.out
+    if args.robust:
+        aggregation = "trimmed_mean"
+        out_path = OUT_PATH_ROBUST
+
     main(
         fl_rounds=args.fl_rounds,
         local_epochs=args.local_epochs,
@@ -436,5 +545,6 @@ if __name__ == "__main__":
         poison_target=args.poison_target,
         poison_rates=args.poison_rates,
         poisoned_client_idx=args.poisoned_client,
-        out_path=args.out,
+        out_path=out_path,
+        aggregation=aggregation,
     )
