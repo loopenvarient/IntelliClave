@@ -1,14 +1,14 @@
 {
-  "round": 20,
-  "total_rounds": 20,
+  "round": 35,
+  "total_rounds": 35,
   "clients": 3,
-  "loss": 0.77684,
-  "accuracy": 0.71,
-  "macro_f1": 0.6,
-  "save_dir": "results/fl_rounds\\run_20260607_103423",
+  "loss": 0.43515,
+  "accuracy": 0.82,
+  "macro_f1": 0.73,
+  "save_dir": "results/fl_rounds\\run_20260607_114421",
   "model_type": "mlp",
   "early_stopped": false,
-  "noise_scale": 1.0,
-  "temperature": 5.0,
-  "epsilon": 4.24745
+  "noise_scale": 0.5,
+  "temperature": 1.0,
+  "epsilon": 7.99471
 }
