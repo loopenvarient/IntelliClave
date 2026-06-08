@@ -145,7 +145,7 @@ def train_local(
             target_delta = 1.0 / train_metadata.train_size
             print(
                 f"[DP] Attaching PrivacyEngine: "
-                f"ε={target_epsilon}, δ={target_delta:.2e}, "
+                f"eps={target_epsilon}, delta={target_delta:.2e}, "
                 f"max_grad_norm={max_grad_norm}, "
                 f"train_size={train_metadata.train_size}"
             )
@@ -197,7 +197,7 @@ def train_local(
             print(
                 f"  Epoch {epoch:3d} loss={loss:.4f} "
                 f"accuracy={acc:.4f} macro_f1={macro_f1:.4f} "
-                f"ε={epoch_entry['epsilon']:.4f}"
+                f"eps={epoch_entry['epsilon']:.4f}"
             )
         else:
             print(
@@ -256,7 +256,7 @@ def train_local(
 
     if use_dp and privacy_engine is not None:
         final_eps = privacy_engine.get_epsilon(delta=1.0 / train_metadata.train_size)
-        print(f"\n[DP] Final privacy budget consumed: ε={final_eps:.4f}")
+        print(f"\n[DP] Final privacy budget consumed: eps={final_eps:.4f}")
         print(f"[DP] Accuracy with DP: {training_history[-1]['accuracy']:.4f}")
         print(f"[DP] Macro-F1 with DP: {training_history[-1]['macro_f1']:.4f}")
 

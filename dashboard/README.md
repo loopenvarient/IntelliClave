@@ -29,6 +29,7 @@ dashboard/
 | `GET /attestation` | `attestation.json` |
 | `GET /benchmarks` | `results/benchmarks_baseline.json` |
 | `GET /privacy_log` | `results/fl_rounds/run_*/fl_privacy.json` |
+| `GET /comparison` | `results/local_vs_global.json` (local-only vs global FL) |
 | `POST /predict` | Live `global_model_latest.pth` with PrivacyWrapper |
 
 ## How it connects

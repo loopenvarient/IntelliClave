@@ -43,6 +43,9 @@ python fl/run_client.py --id 3 --dp --epsilon 10 --rounds 5 --crypto --attest
 
 # Evaluate saved model
 python fl/evaluate_global_model.py --checkpoint results/fl_rounds/run_*/global_model_latest.pth
+
+# Local vs global FL utility comparison (dashboard /comparison)
+python fl/compare_local_vs_global.py --dp --epsilon 10 --retrain
 ```
 
 ## Note on aggregation vs attacks

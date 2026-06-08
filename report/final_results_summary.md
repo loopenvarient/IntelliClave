@@ -14,6 +14,7 @@ This document summarizes the final commands executed, what each command tested, 
 | TLS certificates | CA, server, and client certificate generation | Bundle generated and verified | Passed |
 | TEE attestation | Server quote + client verification + rogue server rejection | All clients verified, rogue server blocked | Passed |
 | Model inversion defense | Defended attack result file | Avg cosine similarity = 0.0170 | Resistant / Low risk |
+| Privacy–utility (solo vs FL) | `compare_local_vs_global.py --dp --epsilon 10` | Weighted macro F1: solo 52.8% vs global 85.7% (+32.9pp) | FL collaboration wins under matched DP |
 
 ## 1. Data Preparation: Non-IID Dirichlet Split
 
@@ -390,7 +391,41 @@ Model inversion attempts to reconstruct representative input data from model out
 
 The defended inversion attack failed to reconstruct meaningful inputs. The average cosine similarity is close to zero, confidence is low, entropy is high, and no class was marked high risk.
 
-## 8. Current Run Status Snapshot
+## 8. Privacy–Utility: Solo vs Federated (DP-matched)
+
+### Command
+
+```powershell
+python fl/compare_local_vs_global.py --dp --epsilon 10 --retrain
+```
+
+### Purpose
+
+Fair comparison on each client’s held-out test split: **solo local training** (per-client normalization, DP-SGD target ε=10) vs the **federated global checkpoint** (global normalization, FL+DP run). Dashboard Evaluation page reads `results/local_vs_global.json` via `GET /comparison`.
+
+### Per-client macro F1
+
+| Client | Solo local (DP) | Global FL (DP) | Δ F1 |
+|---|---:|---:|---:|
+| Client 1 | 57.7% | 92.8% | +35.1pp |
+| Client 2 | 60.3% | 72.9% | +12.7pp |
+| Client 3 | 35.1% | 81.7% | +46.6pp |
+
+### Summary
+
+| Metric | Value |
+|---|---:|
+| Weighted solo macro F1 | 52.8% |
+| Weighted global macro F1 | 85.7% |
+| Average Δ F1 (FL − solo) | +32.9pp |
+| Clients where FL wins (F1) | 3 / 3 |
+| Global checkpoint | `results/fl_rounds/run_20260607_160153/global_model_latest.pth` |
+
+### Interpretation
+
+Under matched DP budgets, isolated hospital models underperform the federated global model on every client—especially on non-IID minorities (e.g. Client 3). This quantifies the **utility gain from collaboration** at a fixed privacy regime, complementing the attack evaluations.
+
+## 9. Current Run Status Snapshot
 
 ### Source
 
@@ -411,7 +446,7 @@ status.json
 | Early stopped | false |
 | Save directory | `results/fl_rounds/run_20260607_160153` |
 
-## 9. Main Conclusions
+## 10. Main Conclusions
 
 1. The final dataset is non-IID.
    - The Dirichlet split with `alpha=0.5` created visibly skewed label distributions across clients.
@@ -441,7 +476,11 @@ status.json
    - Reconstructed inputs do not match real data.
    - No high-risk classes were detected.
 
-## 10. PPT-Ready Slide Outline
+8. Federated learning improves utility under matched DP.
+   - Solo local DP baselines average 52.8% weighted macro F1 vs 85.7% for the global FL+DP model (+32.9pp).
+   - All three non-IID clients benefit from collaboration on their local test splits.
+
+## 11. PPT-Ready Slide Outline
 
 ### Slide 1 - Project Goal
 
@@ -503,7 +542,7 @@ status.json
 - FedAvg baseline confirms the Byzantine threat is real; trimmed-mean rerun shows the fix works.
 - Recommended production step: adopt trimmed-mean (or Krum) in `fl_server.py` aggregation.
 
-## 11. Report-Ready Short Paragraph
+## 12. Report-Ready Short Paragraph
 
 The final IntelliClave evaluation used a Dirichlet non-IID split of the UCI HAR dataset across three clients, preserving all 561 raw features. The generated client datasets passed integrity validation and showed intentionally skewed class distributions. Membership inference against the no-DP baseline produced an average AUC of 0.5050 and an average confidence gap of 0.0024, indicating near-random attack performance and low privacy leakage through confidence scores. The defended model inversion experiment was also resistant, with average cosine similarity of only 0.0170 and zero high-risk classes. For gradient poisoning, a FedAvg baseline run showed that a full label-flip by one poisoned client reduced global accuracy from 91.85% to 15.04%, confirming the Byzantine threat under standard aggregation. A follow-up run with trimmed-mean robust aggregation on the same attack reduced the 100% poison impact to only a 1.02 percentage point drop (81.95% to 80.93%), demonstrating that outlier client updates can be rejected effectively. The crypto layer passed all four tests, including lossless decryption, integrity verification, tamper rejection, and fresh nonce behavior. TLS certificates were generated and verified for CA, server, and client roles. TEE attestation was successfully demonstrated: all clients verified the legitimate server measurement, while a rogue server simulation was blocked. The recommended production follow-up is to wire trimmed-mean (or Krum) aggregation into the live FL server so training matches the validated attack-lab defence.
 

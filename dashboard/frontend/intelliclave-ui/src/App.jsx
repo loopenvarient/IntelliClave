@@ -380,6 +380,118 @@ function ClientPanel({ status, live }) {
   )
 }
 
+// ── Local vs global FL comparison ─────────────────────────────────────────────
+function FlComparisonPanel({ comparison, live }) {
+  const clients = comparison?.clients || []
+  const summary = comparison?.summary
+  const chartData = clients.map(c => ({
+    name: c.client_name || `Client ${c.client_id}`,
+    local_f1: c.local?.macro_f1 ?? 0,
+    global_f1: c.global?.macro_f1 ?? 0,
+    local_acc: c.local?.accuracy ?? 0,
+    global_acc: c.global?.accuracy ?? 0,
+    gain_f1: c.gain?.macro_f1_pct ?? 0,
+  }))
+
+  const useDp = comparison?.local_training?.use_dp
+  const eps = comparison?.local_training?.target_epsilon
+  const deltaF1 = summary?.avg_gain?.macro_f1_pct ?? 0
+  const deltaColor = deltaF1 >= 0 ? '#00ff88' : '#ffaa00'
+
+  return (
+    <Panel
+      title="Privacy–Utility: Solo vs Federated"
+      tag={summary ? `Δ ${deltaF1 >= 0 ? '+' : ''}${fmt(deltaF1, 1)}pp F1` : 'DP-matched'}
+      accent="#a78bfa"
+      live={live && clients.length > 0}
+    >
+      <div className="panel-subtitle">
+        Fair comparison: <strong style={{ color: '#94a3b8', fontWeight: 600 }}>local solo</strong> vs{' '}
+        <strong style={{ color: '#00d4ff', fontWeight: 600 }}>global FL</strong> on each client&apos;s test split
+        {useDp ? ` (both under DP-SGD, ε≈${eps ?? 10})` : ''}.
+        {useDp === false && (
+          <span style={{ display: 'block', marginTop: 4, color: '#ffaa00' }}>
+            Stale data: local baselines were trained without DP. Regenerate with{' '}
+            <code style={{ color: '#94a3b8' }}>python fl/compare_local_vs_global.py --dp --epsilon 10 --retrain</code>.
+          </span>
+        )}
+      </div>
+      {!clients.length ? (
+        <EmptyChart message="Run: python fl/compare_local_vs_global.py --dp --epsilon 10 --retrain" />
+      ) : (
+        <>
+          {summary && (
+            <div className="comparison-summary">
+              <div className="comparison-stat">
+                <span className="comparison-stat-label">Solo local{useDp ? ' (DP)' : ''}</span>
+                <span className="comparison-stat-value" style={{ color: '#94a3b8' }}>
+                  {pct(summary.local_weighted?.macro_f1)}
+                </span>
+              </div>
+              <div className="comparison-stat">
+                <span className="comparison-stat-label">Global FL{useDp ? ' (DP)' : ''}</span>
+                <span className="comparison-stat-value" style={{ color: '#00d4ff' }}>
+                  {pct(summary.global_weighted?.macro_f1)}
+                </span>
+              </div>
+              <div className="comparison-stat">
+                <span className="comparison-stat-label">Δ F1 (FL − solo)</span>
+                <span className="comparison-stat-value" style={{ color: deltaColor }}>
+                  {deltaF1 >= 0 ? '+' : ''}{fmt(deltaF1, 1)}pp
+                </span>
+              </div>
+              <div className="comparison-stat">
+                <span className="comparison-stat-label">FL wins (F1)</span>
+                <span className="comparison-stat-value" style={{ color: '#e2e8f0' }}>
+                  {summary.clients_where_global_wins_f1}/{summary.total_clients}
+                </span>
+              </div>
+            </div>
+          )}
+          <div className="chart-legend" style={{ marginTop: 12 }}>
+            <span className="chart-legend-item"><span className="chart-legend-line" style={{ background: '#64748b' }} />Solo local{useDp ? ' (DP)' : ''}</span>
+            <span className="chart-legend-item"><span className="chart-legend-line" style={{ background: '#00d4ff' }} />Global FL{useDp ? ' (DP)' : ''}</span>
+          </div>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+              <XAxis dataKey="name" tick={{ fill: '#475569', fontSize: 11 }} tickLine={false} axisLine={false} />
+              <YAxis domain={[0, 1]} tick={{ fill: '#475569', fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={v => `${(v * 100).toFixed(0)}%`} />
+              <Tooltip content={<CustomTooltip percentKeys={['local_f1', 'global_f1', 'local_acc', 'global_acc']} />} />
+              <Bar dataKey="local_f1" name="Local F1" fill="#64748b" radius={[3, 3, 0, 0]} maxBarSize={36} />
+              <Bar dataKey="global_f1" name="Global F1" fill="#00d4ff" radius={[3, 3, 0, 0]} maxBarSize={36} />
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="comparison-table-wrap">
+            <table className="comparison-table">
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Solo F1</th>
+                  <th>Global F1</th>
+                  <th>Δ F1</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clients.map(c => (
+                  <tr key={c.client_id}>
+                    <td>{c.client_name}</td>
+                    <td>{pct(c.local?.macro_f1)}</td>
+                    <td>{pct(c.global?.macro_f1)}</td>
+                    <td style={{ color: (c.gain?.macro_f1_pct ?? 0) >= 0 ? '#00ff88' : '#ff6b6b' }}>
+                      {(c.gain?.macro_f1_pct ?? 0) >= 0 ? '+' : ''}{fmt(c.gain?.macro_f1_pct, 1)}pp
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </Panel>
+  )
+}
+
 // ── Eval panel ────────────────────────────────────────────────────────────────
 function EvalPanel({ perClass, attacks, live }) {
   const data = perClass?.length ? perClass : (live ? [] : DUMMY_PER_CLASS)
@@ -578,6 +690,15 @@ const EXTRA_CSS = `
 .topbar-sync{font-size:11px;font-family:monospace;color:#475569;background:rgba(255,255,255,0.03);padding:3px 8px;border-radius:4px}
 .topbar-sync.live{color:#00ff88}
 .source-badge{font-size:11px;font-family:monospace;color:#64748b;background:rgba(255,255,255,0.02);padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.06)}
+.comparison-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:8px}
+.comparison-stat{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:10px 12px}
+.comparison-stat-label{display:block;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.comparison-stat-value{font-size:18px;font-weight:800;font-family:monospace}
+.comparison-table-wrap{margin-top:14px;overflow-x:auto}
+.comparison-table{width:100%;border-collapse:collapse;font-size:12px}
+.comparison-table th{text-align:left;color:#64748b;font-weight:600;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.comparison-table td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.04);color:#cbd5e1;font-family:monospace}
+@media(max-width:900px){.comparison-summary{grid-template-columns:repeat(2,1fr)}}
 `
 
 // ── Main App ──────────────────────────────────────────────────────────────────
@@ -588,6 +709,7 @@ export default function App() {
   const [teeData,     setTeeData]     = useState([])
   const [attestation, setAttestation] = useState(null)
   const [attacks,     setAttacks]     = useState(null)
+  const [comparison,  setComparison]  = useState(null)
   const [activePage,  setActivePage]  = useState('overview')
   const [lastPoll,    setLastPoll]    = useState(null)
   const [backendUp,   setBackendUp]   = useState(false)
@@ -621,13 +743,14 @@ export default function App() {
     const poll = async () => {
       const cfg = authToken ? { headers: { Authorization: `Bearer ${authToken}` } } : {}
       try {
-        const [s, r, b, a, p, atk] = await Promise.allSettled([
+        const [s, r, b, a, p, atk, cmp] = await Promise.allSettled([
           axios.get(`${API}/status`, cfg),
           axios.get(`${API}/results`, cfg),
           axios.get(`${API}/benchmarks`, cfg),
           axios.get(`${API}/attestation`, cfg),
           axios.get(`${API}/privacy_log`, cfg),
           axios.get(`${API}/attacks`, cfg),
+          axios.get(`${API}/comparison`, cfg),
         ])
         if (s.status === 'fulfilled') {
           const sd = s.value.data
@@ -652,8 +775,9 @@ export default function App() {
             tee:  r.tee_ms,
           })))
         }
-        if (a.status === 'fulfilled')   setAttestation(a.value.data)
-        if (atk.status === 'fulfilled') setAttacks(atk.value.data)
+        if (a.status === 'fulfilled')    setAttestation(a.value.data)
+        if (atk.status === 'fulfilled')  setAttacks(atk.value.data)
+        if (cmp.status === 'fulfilled')  setComparison(cmp.value.data)
       } catch { setBackendUp(false) }
     }
     poll()
@@ -696,8 +820,9 @@ export default function App() {
       <ClientPanel status={s} live={live} />
     </>,
     evaluation: <>
-      <PageHeader title="Evaluation" desc="Per-class model quality and security evaluation against 3 attack vectors." />
+      <PageHeader title="Evaluation" desc="Privacy–utility tradeoff (solo vs federated under DP), per-class quality, and security attacks." />
       {kpiCards}
+      <FlComparisonPanel comparison={comparison} live={live} />
       <div className="grid-2"><EvalPanel perClass={perClass} attacks={attacks} live={live} /><SystemPanel status={s} /></div>
     </>,
     tee: <>

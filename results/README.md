@@ -25,6 +25,8 @@ Every runnable module writes JSON, checkpoints, plots, and attack summaries here
 | `epsilon_sweep.json` | Accuracy vs ε experiment |
 | `epsilon_rounds.json` | ε consumed per FL round |
 | `cross_validation.json` | K-fold CV results |
+| `local_vs_global.json` | Per-client local baseline vs global FL model (`fl/compare_local_vs_global.py`) |
+| `local_baselines/` | Cached per-client local-only checkpoints |
 | `graphs/`, `plots/` | Generated figures |
 | `pipeline_tests/`, `pipeline_runs/` | Output from `scripts/test_pipeline.ps1` |
 

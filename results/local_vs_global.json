@@ -1,0 +1,111 @@
+{
+  "generated_at": "2026-06-08T12:55:02.963635+00:00",
+  "global_checkpoint": "results/fl_rounds/run_20260607_160153/global_model_latest.pth",
+  "local_training": {
+    "epochs": 20,
+    "batch_size": 32,
+    "model_type": "mlp",
+    "use_dp": true,
+    "target_epsilon": 10.0,
+    "baseline_dir": "results/local_baselines"
+  },
+  "clients": [
+    {
+      "client_id": 1,
+      "client_name": "Client 1",
+      "client_csv": "client1.csv",
+      "test_size": 1106,
+      "local": {
+        "accuracy": 0.76944,
+        "macro_f1": 0.57733,
+        "loss": 0.94915,
+        "checkpoint": "results/local_baselines/client1_local.pth",
+        "normalization": "per_client"
+      },
+      "global": {
+        "accuracy": 0.93761,
+        "macro_f1": 0.92818,
+        "loss": 0.38617,
+        "checkpoint": "results/fl_rounds/run_20260607_160153/global_model_latest.pth",
+        "normalization": "global"
+      },
+      "gain": {
+        "accuracy": 0.16817,
+        "macro_f1": 0.35085,
+        "accuracy_pct": 16.82,
+        "macro_f1_pct": 35.09
+      }
+    },
+    {
+      "client_id": 2,
+      "client_name": "Client 2",
+      "client_csv": "client2.csv",
+      "test_size": 458,
+      "local": {
+        "accuracy": 0.93013,
+        "macro_f1": 0.6028,
+        "loss": 0.67513,
+        "checkpoint": "results/local_baselines/client2_local.pth",
+        "normalization": "per_client"
+      },
+      "global": {
+        "accuracy": 0.93013,
+        "macro_f1": 0.72925,
+        "loss": 0.45923,
+        "checkpoint": "results/fl_rounds/run_20260607_160153/global_model_latest.pth",
+        "normalization": "global"
+      },
+      "gain": {
+        "accuracy": 0.0,
+        "macro_f1": 0.12645,
+        "accuracy_pct": 0.0,
+        "macro_f1_pct": 12.65
+      }
+    },
+    {
+      "client_id": 3,
+      "client_name": "Client 3",
+      "client_csv": "client3.csv",
+      "test_size": 497,
+      "local": {
+        "accuracy": 0.70423,
+        "macro_f1": 0.35092,
+        "loss": 1.15422,
+        "checkpoint": "results/local_baselines/client3_local.pth",
+        "normalization": "per_client"
+      },
+      "global": {
+        "accuracy": 0.87726,
+        "macro_f1": 0.81701,
+        "loss": 0.61508,
+        "checkpoint": "results/fl_rounds/run_20260607_160153/global_model_latest.pth",
+        "normalization": "global"
+      },
+      "gain": {
+        "accuracy": 0.17303,
+        "macro_f1": 0.46609,
+        "accuracy_pct": 17.3,
+        "macro_f1_pct": 46.61
+      }
+    }
+  ],
+  "summary": {
+    "local_weighted": {
+      "accuracy": 0.78942,
+      "macro_f1": 0.52839
+    },
+    "global_weighted": {
+      "accuracy": 0.92139,
+      "macro_f1": 0.85717
+    },
+    "avg_gain": {
+      "accuracy": 0.13197,
+      "macro_f1": 0.32877,
+      "accuracy_pct": 13.2,
+      "macro_f1_pct": 32.88
+    },
+    "clients_where_global_wins_f1": 3,
+    "total_clients": 3
+  },
+  "note": "Local models train only on each hospital's data (per-client normalization) with DP-SGD. Global model is the federated FL+DP checkpoint (global normalization). Positive delta F1 means collaboration beat solo training under comparable privacy."
+}

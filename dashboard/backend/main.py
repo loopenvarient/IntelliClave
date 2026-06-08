@@ -316,13 +316,14 @@ def _best_attack_path(base_rel_path: str) -> str:
     Priority (highest defence first):
       1. <stem>_defended.json   — full noise + temperature defence (noise=3.0, temp=15.0)
       2. <stem>_mitigated.json  — confidence-masked only
-      3. <stem>.json            — unmitigated baseline (fallback)
+      3. <stem>_robust.json     — Byzantine-robust aggregation (e.g. trimmed mean)
+      4. <stem>.json            — unmitigated baseline (fallback)
 
     This ensures /attacks always returns the RESISTANT defended verdict rather
     than the unmitigated VULNERABLE baseline.
     """
     stem = base_rel_path.replace(".json", "")
-    for suffix in ("_defended.json", "_mitigated.json", ".json"):
+    for suffix in ("_defended.json", "_mitigated.json", "_robust.json", ".json"):
         candidate = os.path.join(ROOT, stem + suffix)
         if os.path.exists(candidate):
             return candidate
@@ -513,6 +514,22 @@ def results(user=Depends(get_current_user)):
             data["per_class_f1"] = per_class
     return data
 
+@app.get("/comparison")
+def comparison(user=Depends(get_current_user)):
+    """Local-only vs federated global model metrics per client."""
+    path = os.path.join(ROOT, "results", "local_vs_global.json")
+    if not os.path.exists(path):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Comparison not found. Run: "
+                "python fl/compare_local_vs_global.py"
+            ),
+        )
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 @app.get("/attestation")
 def attestation(user=Depends(get_current_user)):
     return _read_json("attestation.json")
@@ -574,8 +591,8 @@ def attacks(user=Depends(get_current_user)):
     """
     Return attack evaluation summaries.
 
-    Uses _best_attack_path() to walk through defended → mitigated → unmitigated
-    variants so the dashboard always shows the RESISTANT defended verdict.
+    Uses _best_attack_path() to walk through defended → mitigated → robust →
+    unmitigated variants so the dashboard always shows the RESISTANT verdict.
     """
     out = {}
     attack_files = {
@@ -591,7 +608,7 @@ def attacks(user=Depends(get_current_user)):
             summary = _normalize_attack_summary(data.get("summary", {}))
             if isinstance(summary, dict):
                 variant = os.path.basename(best_path).replace(".json", "").split("_")[-1]
-                if variant in ("defended", "mitigated"):
+                if variant in ("defended", "mitigated", "robust"):
                     summary["_source"] = variant
             out[key] = summary
         else:
