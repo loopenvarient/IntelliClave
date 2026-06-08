@@ -4,10 +4,10 @@ import sys
 
 _HERE = os.path.dirname(__file__)
 _ROOT = os.path.abspath(os.path.join(_HERE, ".."))
-sys.path.insert(0, _ROOT)
-sys.path.insert(0, _HERE)
-from data_utils import get_default_client_csvs  # noqa: E402
-from fl_client import start_client  # noqa: E402
+sys.path.insert(0, _ROOT)                          # fixed: removed redundant _HERE insert
+
+from data_utils import get_default_client_csvs     # noqa: E402
+from fl_client import start_client                 # noqa: E402
 
 # ── Attestation import ────────────────────────────────────────────────────────
 _TEE_DIR = os.path.join(os.path.dirname(__file__), "..", "tee", "attestation")
@@ -55,6 +55,14 @@ if __name__ == "__main__":
         help="Path to global_normalization.json from the FL server run directory "
              "(optional; stats are also applied from server round config).",
     )
+    # ── Fixed: use BooleanOptionalAction so --no-save-local-model works ───────
+    parser.add_argument(
+        "--save-local-model",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Save the final local model checkpoint to results/local_models/ "
+             "for use in the dashboard Predictions page (default: True).",
+    )
     args = parser.parse_args()
 
     # Verify server attestation before connecting
@@ -92,7 +100,8 @@ if __name__ == "__main__":
         with open(pubkey_path, "rb") as f:
             server_public_key_pem = f.read()
 
-    start_client(
+    # ── Run federated training ─────────────────────────────────────────────────
+    trained_model = start_client(
         csv_path=csv_path,
         client_id=args.id,
         server_address=args.server,
@@ -106,4 +115,44 @@ if __name__ == "__main__":
         target_epsilon=args.epsilon,
         num_fl_rounds=args.rounds,
         norm_config_path=args.norm_config,
+        save_local_model=args.save_local_model,    # fixed: forward the flag
     )
+
+    # ── Save local model checkpoint for dashboard Predictions page ─────────────
+    if args.save_local_model:
+        import torch
+
+        local_model_dir = os.path.join(_ROOT, "results", "local_models")
+        os.makedirs(local_model_dir, exist_ok=True)
+        save_path = os.path.join(local_model_dir, f"client{args.id}_local_model.pth")
+
+        saved = False
+
+        # Path 1: start_client returns the trained model directly
+        if trained_model is not None and hasattr(trained_model, "state_dict"):
+            torch.save(trained_model.state_dict(), save_path)
+            saved = True
+            print(f"[run_client] Local model saved → {save_path}")
+
+        # Path 2: fl_client writes a temp checkpoint we can copy
+        if not saved:
+            temp_candidates = [
+                os.path.join(_HERE, f"client{args.id}_model_temp.pth"),
+                os.path.join(_ROOT, f"client{args.id}_model_temp.pth"),
+                os.path.join(_HERE, "local_model_temp.pth"),
+            ]
+            for temp_path in temp_candidates:
+                if os.path.exists(temp_path):
+                    import shutil
+                    shutil.copy2(temp_path, save_path)
+                    saved = True
+                    print(f"[run_client] Local model saved (from temp) → {save_path}")
+                    break
+
+        if not saved:
+            print(
+                f"[run_client] WARNING: Could not save local model for client {args.id}.\n"
+                f"             To enable the Predictions comparison page, modify fl_client.py\n"
+                f"             so start_client() returns the trained model, or saves it to:\n"
+                f"             {save_path}"
+            )

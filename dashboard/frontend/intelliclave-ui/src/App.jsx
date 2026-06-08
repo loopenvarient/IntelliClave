@@ -5,6 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine
 } from 'recharts'
+import PredictionsPage from './PredictionsPage'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 
@@ -51,9 +52,9 @@ const DUMMY_ATTESTATION = {
 }
 
 const DUMMY_ATTACKS = {
-  model_inversion:      { verdict: 'RESISTANT',    avg_cosine_similarity: 0.31 },
-  membership_inference: { verdict: 'NEAR RANDOM',  auc: 0.503 },
-  gradient_poisoning:   { verdict: 'LOW IMPACT',   accuracy_drop: 2.1 },
+  model_inversion:      { verdict: 'RESISTANT',   avg_cosine_similarity: -0.0083, high_risk_classes: 0, total_classes: 6 },
+  membership_inference: { verdict: 'NEAR RANDOM', auc: 0.503 },
+  gradient_poisoning:   { verdict: 'LOW IMPACT',  accuracy_drop: 2.1 },
 }
 
 const DUMMY_PER_CLASS = [
@@ -79,7 +80,7 @@ function pct(v) {
   const n = Number(v)
   return Number.isFinite(n) ? `${(n * 100).toFixed(1)}%` : '—'
 }
-function asPct(v, decimals = 1) {
+function asPct(v) {
   const n = Number(v)
   return Number.isFinite(n) ? n * 100 : null
 }
@@ -128,12 +129,11 @@ function AnimCounter({ value, decimals = 3, suffix = '' }) {
   const ref = useRef(null)
   useEffect(() => {
     const target = Number(value) || 0
-    const start = 0, duration = 1200
     const startTime = performance.now()
     const tick = (now) => {
-      const progress = Math.min((now - startTime) / duration, 1)
+      const progress = Math.min((now - startTime) / 1200, 1)
       const ease = 1 - Math.pow(1 - progress, 3)
-      setDisp(start + (target - start) * ease)
+      setDisp(target * ease)
       if (progress < 1) ref.current = requestAnimationFrame(tick)
     }
     ref.current = requestAnimationFrame(tick)
@@ -156,22 +156,21 @@ function PulseDot({ color = '#00d4ff', active = true }) {
 function VerdictBadge({ verdict }) {
   const display = shortVerdict(verdict)
   const v = display.toUpperCase()
-  const config = v.includes('RESIST') || v.includes('RANDOM') || v.includes('LOW')
-    ? { cls: 'verdict-good' }
-    : v.includes('MODERATE')
-    ? { cls: 'verdict-warn' }
-    : { cls: 'verdict-bad' }
-  return <span className={`verdict-badge ${config.cls}`}>{display}</span>
+  const cls = v.includes('RESIST') || v.includes('RANDOM') || v.includes('LOW')
+    ? 'verdict-good'
+    : v.includes('MODERATE') ? 'verdict-warn' : 'verdict-bad'
+  return <span className={`verdict-badge ${cls}`}>{display}</span>
 }
 
 // ── Nav ───────────────────────────────────────────────────────────────────────
 const PAGES = [
-  { key: 'overview',   label: 'Overview',    icon: '⬡' },
-  { key: 'training',   label: 'Training',    icon: '◈' },
-  { key: 'privacy',    label: 'Privacy',     icon: '⊕' },
-  { key: 'clients',    label: 'Clients',     icon: '⬢' },
-  { key: 'evaluation', label: 'Evaluation',  icon: '⊞' },
-  { key: 'tee',        label: 'TEE',         icon: '⊟' },
+  { key: 'overview',     label: 'Overview',     icon: '⬡' },
+  { key: 'training',     label: 'Training',     icon: '◈' },
+  { key: 'privacy',      label: 'Privacy',      icon: '⊕' },
+  { key: 'clients',      label: 'Clients',      icon: '⬢' },
+  { key: 'evaluation',   label: 'Evaluation',   icon: '⊞' },
+  { key: 'tee',          label: 'TEE',          icon: '⊟' },
+  { key: 'predictions',  label: 'Predictions',  icon: '⊳' },
 ]
 
 function Sidebar({ active, onChange, backendUp, authToken, onLogout, onLoginClick }) {
@@ -209,7 +208,7 @@ function Sidebar({ active, onChange, backendUp, authToken, onLogout, onLoginClic
 }
 
 // ── KPI Card ──────────────────────────────────────────────────────────────────
-function KpiCard({ label, value, sub, accent, format, decimals = 3, suffix = '' }) {
+function KpiCard({ label, value, sub, accent, decimals = 3, suffix = '' }) {
   const accentColor = { cyan: '#00d4ff', green: '#00ff88', purple: '#a78bfa', amber: '#ffaa00' }[accent] || '#00d4ff'
   return (
     <div className="kpi-card" style={{ '--accent': accentColor }}>
@@ -241,7 +240,6 @@ function Panel({ title, tag, accent = '#00d4ff', live = false, children }) {
   )
 }
 
-// ── Section heading ───────────────────────────────────────────────────────────
 function PageHeader({ title, desc }) {
   return (
     <div className="page-header">
@@ -258,8 +256,8 @@ function TrainingChart({ rounds, live }) {
     <Panel title="Training Performance" tag={`${data.length} rounds`} accent="#00d4ff" live={live && data.length > 0}>
       {!data.length ? <EmptyChart /> : <>
         <div className="chart-legend">
-          {[{ label: 'Accuracy', color: '#00d4ff', key: 'accuracy' }, { label: 'Macro-F1', color: '#a78bfa', key: 'macro_f1' }, { label: 'Loss', color: '#ff6b6b', key: 'loss' }].map(s => (
-            <span key={s.key} className="chart-legend-item">
+          {[{ label: 'Accuracy', color: '#00d4ff' }, { label: 'Macro-F1', color: '#a78bfa' }, { label: 'Loss', color: '#ff6b6b' }].map(s => (
+            <span key={s.label} className="chart-legend-item">
               <span className="chart-legend-line" style={{ background: s.color }} />
               {s.label}
             </span>
@@ -269,11 +267,11 @@ function TrainingChart({ rounds, live }) {
           <LineChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: -10 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
             <XAxis dataKey="round" tick={{ fill: '#475569', fontSize: 11 }} tickLine={false} axisLine={{ stroke: 'rgba(255,255,255,0.08)' }} />
-            <YAxis tick={{ fill: '#475569', fontSize: 11 }} tickLine={false} axisLine={false} domain={[0, 'auto']} tickFormatter={v => v < 1.5 ? `${(v * 100).toFixed(0)}%` : v.toFixed(2)} />
+            <YAxis tick={{ fill: '#475569', fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={v => v < 1.5 ? `${(v * 100).toFixed(0)}%` : v.toFixed(2)} />
             <Tooltip content={<CustomTooltip percentKeys={['accuracy', 'macro_f1']} />} />
-            <Line type="monotone" dataKey="accuracy" name="Accuracy" stroke="#00d4ff" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#00d4ff' }} />
-            <Line type="monotone" dataKey="macro_f1" name="Macro-F1" stroke="#a78bfa" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#a78bfa' }} strokeDasharray="6 3" />
-            <Line type="monotone" dataKey="loss" name="Loss" stroke="#ff6b6b" strokeWidth={2} dot={false} activeDot={{ r: 5, fill: '#ff6b6b' }} strokeDasharray="2 4" />
+            <Line type="monotone" dataKey="accuracy" name="Accuracy" stroke="#00d4ff" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+            <Line type="monotone" dataKey="macro_f1" name="Macro-F1" stroke="#a78bfa" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} strokeDasharray="6 3" />
+            <Line type="monotone" dataKey="loss" name="Loss" stroke="#ff6b6b" strokeWidth={2} dot={false} activeDot={{ r: 5 }} strokeDasharray="2 4" />
           </LineChart>
         </ResponsiveContainer>
       </>}
@@ -291,7 +289,6 @@ function PrivacyPanel({ status, rounds, live }) {
   const sourceRounds = rounds?.length ? rounds : (live ? [] : DUMMY_ROUNDS)
   const data = sourceRounds.map(r => ({ round: r.round, epsilon: r.epsilon || 0 }))
   const hasEpsilonCurve = data.some(r => r.epsilon > 0)
-
   return (
     <Panel title="Differential Privacy Budget" tag="DP-SGD" accent="#a78bfa" live={live && eps > 0}>
       <div style={{ textAlign: 'center', padding: '16px 0 12px' }}>
@@ -335,18 +332,17 @@ function PrivacyPanel({ status, rounds, live }) {
 
 // ── Client panel ──────────────────────────────────────────────────────────────
 function ClientPanel({ status, live }) {
-  const clients = normalizeClients(status?.clients || [])
-  const dist = status?.client_distribution
+  const clients  = normalizeClients(status?.clients || [])
+  const dist     = status?.client_distribution
   const distData = dist?.chart_data?.length ? dist.chart_data : (live ? [] : [
-    { cls: 'C0', c1: 1494, c2: 27,  c3: 201 },
-    { cls: 'C1', c1: 1184, c2: 331, c3: 29  },
-    { cls: 'C2', c1: 401,  c2: 651, c3: 354 },
-    { cls: 'C3', c1: 785,  c2: 238, c3: 754 },
-    { cls: 'C4', c1: 782,  c2: 8,   c3: 1116},
-    { cls: 'C5', c1: 883,  c2: 1033,c3: 28  },
+    { cls: 'C0', c1: 1494, c2: 27,   c3: 201  },
+    { cls: 'C1', c1: 1184, c2: 331,  c3: 29   },
+    { cls: 'C2', c1: 401,  c2: 651,  c3: 354  },
+    { cls: 'C3', c1: 785,  c2: 238,  c3: 754  },
+    { cls: 'C4', c1: 782,  c2: 8,    c3: 1116 },
+    { cls: 'C5', c1: 883,  c2: 1033, c3: 28   },
   ])
   const maxKl = Math.max(...clients.map(c => Number(c.kl_divergence) || 0), 0.001)
-
   return (
     <Panel title="Federated Clients" tag={`${clients.length} nodes`} accent="#00ff88" live={live && clients.some(c => c.samples > 0)}>
       <div className="client-grid">
@@ -374,9 +370,9 @@ function ClientPanel({ status, live }) {
               <YAxis tick={{ fill: '#475569', fontSize: 10 }} tickLine={false} axisLine={false} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
-              <Bar dataKey="c1" name="Client 1" fill="#00d4ff" radius={[2, 2, 0, 0]} maxBarSize={20} />
-              <Bar dataKey="c2" name="Client 2" fill="#a78bfa" radius={[2, 2, 0, 0]} maxBarSize={20} />
-              <Bar dataKey="c3" name="Client 3" fill="#00ff88" radius={[2, 2, 0, 0]} maxBarSize={20} />
+              <Bar dataKey="c1" name="Client 1" fill="#00d4ff" radius={[2,2,0,0]} maxBarSize={20} />
+              <Bar dataKey="c2" name="Client 2" fill="#a78bfa" radius={[2,2,0,0]} maxBarSize={20} />
+              <Bar dataKey="c3" name="Client 3" fill="#00ff88" radius={[2,2,0,0]} maxBarSize={20} />
             </BarChart>
           </ResponsiveContainer>
         : <EmptyChart message="Client distribution unavailable" />}
@@ -384,24 +380,22 @@ function ClientPanel({ status, live }) {
   )
 }
 
-// ── Per-class F1 ──────────────────────────────────────────────────────────────
+// ── Eval panel ────────────────────────────────────────────────────────────────
 function EvalPanel({ perClass, attacks, live }) {
   const data = perClass?.length ? perClass : (live ? [] : DUMMY_PER_CLASS)
-  const mi  = attacks?.model_inversion
-  const mem = attacks?.membership_inference
-  const gp  = attacks?.gradient_poisoning
+  const mi   = attacks?.model_inversion
+  const mem  = attacks?.membership_inference
+  const gp   = attacks?.gradient_poisoning
   const hasAttacks = !!(mi || mem || gp)
-
   const attackRows = hasAttacks ? [
-    { label: 'Model inversion', verdict: mi?.verdict, detail: `cos sim: ${fmt(mi?.avg_cosine_similarity, 3)}` },
-    { label: 'Membership inference', verdict: mem?.verdict, detail: `AUC: ${fmt(mem?.auc ?? mem?.avg_auc, 3)}` },
-    { label: 'Gradient poisoning', verdict: gp?.verdict, detail: `${gp?.aggregation ? gp.aggregation + ' · ' : ''}acc drop: ${fmt(gp?.accuracy_drop_pct ?? (gp?.accuracy_drop != null ? gp.accuracy_drop * 100 : null), 1)}%` },
+    { label: 'Model inversion',      verdict: mi?.verdict,  detail: `cos sim: ${fmt(mi?.avg_cosine_similarity, 3)} · high-risk: ${mi?.high_risk_classes ?? 0}/${mi?.total_classes ?? 6} classes` },
+    { label: 'Membership inference', verdict: mem?.verdict, detail: `AUC: ${fmt(mem?.auc ?? mem?.avg_auc, 3)} · near-random classifier` },
+    { label: 'Gradient poisoning',   verdict: gp?.verdict,  detail: `acc drop: ${fmt(gp?.accuracy_drop_pct ?? (gp?.accuracy_drop != null ? gp.accuracy_drop * 100 : null), 1)}%` },
   ] : (live ? [] : [
-    { label: 'Model inversion', verdict: DUMMY_ATTACKS.model_inversion.verdict, detail: `cos sim: ${fmt(DUMMY_ATTACKS.model_inversion.avg_cosine_similarity, 3)}` },
-    { label: 'Membership inference', verdict: DUMMY_ATTACKS.membership_inference.verdict, detail: `AUC: ${fmt(DUMMY_ATTACKS.membership_inference.auc, 3)}` },
-    { label: 'Gradient poisoning', verdict: DUMMY_ATTACKS.gradient_poisoning.verdict, detail: `acc drop: ${fmt(DUMMY_ATTACKS.gradient_poisoning.accuracy_drop, 1)}%` },
+    { label: 'Model inversion',      verdict: DUMMY_ATTACKS.model_inversion.verdict,      detail: `cos sim: ${fmt(DUMMY_ATTACKS.model_inversion.avg_cosine_similarity, 4)} · high-risk: 0/6 classes` },
+    { label: 'Membership inference', verdict: DUMMY_ATTACKS.membership_inference.verdict, detail: `AUC: ${fmt(DUMMY_ATTACKS.membership_inference.auc, 3)} · near-random classifier` },
+    { label: 'Gradient poisoning',   verdict: DUMMY_ATTACKS.gradient_poisoning.verdict,   detail: `acc drop: ${fmt(DUMMY_ATTACKS.gradient_poisoning.accuracy_drop, 1)}%` },
   ])
-
   return (
     <Panel title="Model Evaluation" tag="6-class" accent="#00ff88" live={live && (data.length > 0 || hasAttacks)}>
       <div className="panel-subtitle">Per-class F1 score (global model)</div>
@@ -410,9 +404,9 @@ function EvalPanel({ perClass, attacks, live }) {
             <BarChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
               <XAxis dataKey="name" tick={{ fill: '#475569', fontSize: 10 }} tickLine={false} axisLine={false} />
-              <YAxis domain={[0, 1]} tick={{ fill: '#475569', fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={v => `${(v * 100).toFixed(0)}%`} />
+              <YAxis domain={[0, 1]} tick={{ fill: '#475569', fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={v => `${(v*100).toFixed(0)}%`} />
               <Tooltip content={<CustomTooltip percentKeys={['f1']} />} />
-              <Bar dataKey="f1" name="F1 Score" fill="#00d4ff" radius={[3, 3, 0, 0]} maxBarSize={40} />
+              <Bar dataKey="f1" name="F1 Score" fill="#00d4ff" radius={[3,3,0,0]} maxBarSize={40} />
             </BarChart>
           </ResponsiveContainer>
         : <EmptyChart message="Per-class metrics loading…" />}
@@ -439,13 +433,10 @@ function TeePanel({ teeData, attestation, live }) {
   const att  = attestation || (live ? {} : DUMMY_ATTESTATION)
   const data = teeData?.length ? teeData : (live ? [] : DUMMY_TEE)
   const ok   = att.tee_verified && att.status === 'VERIFIED'
-
   return (
     <Panel title="TEE · Intel SGX" tag={att.mode || 'gramine-direct'} accent={ok ? '#00ff88' : '#ff3c3c'} live={live && !!attestation}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', marginBottom: 14 }}>
-        <div style={{ width: 48, height: 48, borderRadius: 8, background: ok ? 'rgba(0,255,136,0.1)' : 'rgba(255,60,60,0.1)', border: `1px solid ${ok ? 'rgba(0,255,136,0.3)' : 'rgba(255,60,60,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
-          {ok ? '✓' : '✗'}
-        </div>
+        <div style={{ width: 48, height: 48, borderRadius: 8, background: ok ? 'rgba(0,255,136,0.1)' : 'rgba(255,60,60,0.1)', border: `1px solid ${ok ? 'rgba(0,255,136,0.3)' : 'rgba(255,60,60,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>{ok ? '✓' : '✗'}</div>
         <div>
           <div style={{ fontSize: 15, fontWeight: 700, color: ok ? '#00ff88' : '#ff3c3c' }}>{att.status}</div>
           <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>{att.platform}</div>
@@ -456,11 +447,8 @@ function TeePanel({ teeData, attestation, live }) {
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
-        {[
-          ['Enclave ID', att.enclave_id],
-          ['Environment', att.environment],
-          ['Attested at', att.attestation_time ? new Date(att.attestation_time).toLocaleString() : '—'],
-          ['Mode', att.mode],
+        {[['Enclave ID', att.enclave_id], ['Environment', att.environment],
+          ['Attested at', att.attestation_time ? new Date(att.attestation_time).toLocaleString() : '—'], ['Mode', att.mode]
         ].map(([k, v]) => (
           <div key={k} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 6, padding: '8px 10px' }}>
             <div style={{ fontSize: 10, color: '#475569', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{k}</div>
@@ -477,8 +465,8 @@ function TeePanel({ teeData, attestation, live }) {
               <YAxis tick={{ fill: '#475569', fontSize: 10 }} tickLine={false} axisLine={false} unit="ms" />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
-              <Bar dataKey="base" name="Baseline" fill="#00d4ff" radius={[2, 2, 0, 0]} maxBarSize={24} />
-              <Bar dataKey="tee"  name="TEE" fill="#a78bfa" radius={[2, 2, 0, 0]} maxBarSize={24} />
+              <Bar dataKey="base" name="Baseline" fill="#00d4ff" radius={[2,2,0,0]} maxBarSize={24} />
+              <Bar dataKey="tee"  name="TEE"      fill="#a78bfa" radius={[2,2,0,0]} maxBarSize={24} />
             </BarChart>
           </ResponsiveContainer>
         : <EmptyChart message="Benchmark data unavailable" />}
@@ -500,13 +488,13 @@ function SystemPanel({ status }) {
     ['TEE Platform',  'Intel SGX (sim)'],
     ['Model',         `${(status?.model_type || 'mlp').toUpperCase()} (FedProx)`],
     ['Classes',       '6 (non-IID data)'],
-    ['Status',        status?.training_active ? 'Training' : 'Complete'],
+    ['Status',        status?.training_active ? '🟢 Training' : '⚪ Complete'],
   ]
   return (
     <Panel title="System Configuration" tag="IntelliClave v1.0" accent="#ffaa00">
       <div style={{ display: 'grid', gap: 1 }}>
-        {rows.map(([k, v], i) => (
-          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', animationDelay: `${i * 50}ms` }}>
+        {rows.map(([k, v]) => (
+          <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
             <span style={{ fontSize: 12, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{k}</span>
             <span style={{ fontSize: 12, color: '#cbd5e1', fontFamily: 'monospace', fontWeight: 600 }}>{v}</span>
           </div>
@@ -522,26 +510,19 @@ function LoginModal({ onClose, onLogin }) {
   const [pass, setPass] = useState('')
   const [err,  setErr]  = useState('')
   const [loading, setLoading] = useState(false)
-
   async function submit(e) {
-    e.preventDefault()
-    setLoading(true); setErr('')
+    e.preventDefault(); setLoading(true); setErr('')
     try {
       const params = new URLSearchParams()
       params.append('username', user); params.append('password', pass)
       const res = await axios.post(`${API}/token`, params)
-      onLogin(res.data.access_token, res.data.role)
-      onClose()
-    } catch {
-      setErr('Invalid credentials')
-    } finally {
-      setLoading(false)
-    }
+      onLogin(res.data.access_token, res.data.role); onClose()
+    } catch { setErr('Invalid credentials') }
+    finally   { setLoading(false) }
   }
-
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-      <div style={{ background: '#0f1628', border: '1px solid rgba(0,212,255,0.2)', borderRadius: 12, padding: 32, width: 340, boxShadow: '0 0 60px rgba(0,212,255,0.1)' }}>
+      <div style={{ background: '#0f1628', border: '1px solid rgba(0,212,255,0.2)', borderRadius: 12, padding: 32, width: 340, position: 'relative', boxShadow: '0 0 60px rgba(0,212,255,0.1)' }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0', marginBottom: 6 }}>Sign in</div>
         <div style={{ fontSize: 13, color: '#64748b', marginBottom: 24 }}>Access the IntelliClave dashboard</div>
         <form onSubmit={submit}>
@@ -560,6 +541,45 @@ function LoginModal({ onClose, onLogin }) {
   )
 }
 
+// ── App CSS extras (appended to App.css at runtime via style tag) ─────────────
+const EXTRA_CSS = `
+.chart-tooltip{background:rgba(10,14,26,0.97);border:1px solid rgba(0,212,255,0.2);border-radius:8px;padding:10px 14px;font-size:12px;font-family:monospace}
+.chart-tooltip-label{color:#64748b;margin-bottom:6px}
+.chart-tooltip-row{display:flex;gap:12px;justify-content:space-between}
+.chart-tooltip-value{font-weight:700}
+.chart-legend{display:flex;gap:20px;margin-bottom:12px}
+.chart-legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:#94a3b8}
+.chart-legend-line{width:20px;height:2px;border-radius:2px;display:inline-block}
+.panel-subtitle{font-size:12px;color:#64748b;margin-bottom:8px}
+.panel-tags{display:flex;gap:6px;align-items:center}
+.panel-tag-live{background:rgba(0,255,136,0.08);border-color:rgba(0,255,136,0.3)!important;color:#00ff88!important}
+.panel-live{border-color:rgba(0,255,136,0.15)!important}
+.empty-state{display:flex;align-items:center;justify-content:center;gap:8px;height:120px;color:#475569;font-size:13px}
+.empty-icon{font-size:20px;opacity:0.4}
+.client-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.client-card{background:rgba(0,212,255,0.04);border:1px solid rgba(0,212,255,0.12);border-radius:8px;padding:12px 14px}
+.client-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.client-name{font-size:13px;font-weight:600;color:#e2e8f0}
+.client-samples{font-size:20px;font-weight:800;color:#00d4ff;font-family:monospace}
+.client-samples-label{font-size:11px;color:#475569;margin-bottom:8px}
+.client-kl{font-size:11px;color:#64748b;margin-bottom:4px}
+.client-kl span{color:#ffaa00}
+.client-kl-bar{background:rgba(255,255,255,0.05);border-radius:2px;height:4px}
+.client-kl-bar div{height:100%;background:#ffaa00;border-radius:2px;transition:width 0.4s}
+.attack-section{margin-top:16px;border-top:1px solid rgba(255,255,255,0.06);padding-top:14px}
+.attack-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+.attack-label{font-size:13px;color:#cbd5e1}
+.attack-detail{font-size:11px;color:#475569;font-family:monospace}
+.verdict-badge{padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.08em;font-family:monospace;border:1px solid}
+.verdict-good{background:rgba(0,255,136,0.1);border-color:rgba(0,255,136,0.3);color:#00ff88}
+.verdict-warn{background:rgba(255,170,0,0.1);border-color:rgba(255,170,0,0.3);color:#ffaa00}
+.verdict-bad{background:rgba(255,60,60,0.1);border-color:rgba(255,60,60,0.3);color:#ff3c3c}
+.topbar-left{display:flex;align-items:center;gap:10px}
+.topbar-sync{font-size:11px;font-family:monospace;color:#475569;background:rgba(255,255,255,0.03);padding:3px 8px;border-radius:4px}
+.topbar-sync.live{color:#00ff88}
+.source-badge{font-size:11px;font-family:monospace;color:#64748b;background:rgba(255,255,255,0.02);padding:3px 8px;border-radius:4px;border:1px solid rgba(255,255,255,0.06)}
+`
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [status,      setStatus]      = useState(null)
@@ -575,9 +595,16 @@ export default function App() {
   const [authRole,    setAuthRole]    = useState(() => localStorage.getItem('ic_role'))
   const [showLogin,   setShowLogin]   = useState(false)
 
+  // Inject extra CSS once
+  useEffect(() => {
+    const tag = document.createElement('style')
+    tag.textContent = EXTRA_CSS
+    document.head.appendChild(tag)
+    return () => document.head.removeChild(tag)
+  }, [])
+
   function handleLogin(token, role) {
-    localStorage.setItem('ic_token', token)
-    localStorage.setItem('ic_role',  role)
+    localStorage.setItem('ic_token', token); localStorage.setItem('ic_role', role)
     setAuthToken(token); setAuthRole(role)
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
   }
@@ -605,34 +632,27 @@ export default function App() {
         if (s.status === 'fulfilled') {
           const sd = s.value.data
           if (Array.isArray(sd.clients)) {
-            sd.clients = sd.clients.map((c, i) => ({
-              ...c,
-              id: c.id || `Client ${c.client_id || i + 1}`,
-            }))
+            sd.clients = sd.clients.map((c, i) => ({ ...c, id: c.id || `Client ${c.client_id || i + 1}` }))
           }
-          setStatus(sd)
-          setBackendUp(true)
-          setLastPoll(new Date().toLocaleTimeString())
+          setStatus(sd); setBackendUp(true); setLastPoll(new Date().toLocaleTimeString())
         } else { setBackendUp(false) }
         if (r.status === 'fulfilled') {
           const rd = r.value.data
           if (rd.rounds?.length) setRounds(rd.rounds)
           if (rd.per_class_f1) {
-            setPerClass(
-              Object.entries(rd.per_class_f1)
-                .map(([k, v]) => ({ name: k.replace(/_/g, ' '), f1: +Number(v).toFixed(4) }))
-                .sort((a, b) => a.name.localeCompare(b.name))
-            )
+            setPerClass(Object.entries(rd.per_class_f1)
+              .map(([k, v]) => ({ name: k.replace(/_/g, ' '), f1: +Number(v).toFixed(4) }))
+              .sort((a, b) => a.name.localeCompare(b.name)))
           }
         }
         if (b.status === 'fulfilled' && b.value.data?.tee_overhead_ms) {
           setTeeData(b.value.data.tee_overhead_ms.map(r => ({
-            op: (r.operation || r.op || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+            op:   (r.operation || r.op || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
             base: r.baseline_ms,
-            tee: r.tee_ms,
+            tee:  r.tee_ms,
           })))
         }
-        if (a.status === 'fulfilled') setAttestation(a.value.data)
+        if (a.status === 'fulfilled')   setAttestation(a.value.data)
         if (atk.status === 'fulfilled') setAttacks(atk.value.data)
       } catch { setBackendUp(false) }
     }
@@ -641,7 +661,7 @@ export default function App() {
     return () => clearInterval(id)
   }, [authToken])
 
-  const s = status || (backendUp ? {} : DUMMY_STATUS)
+  const s    = status || (backendUp ? {} : DUMMY_STATUS)
   const live = backendUp
 
   const kpiCards = (
@@ -649,7 +669,7 @@ export default function App() {
       <KpiCard label="Accuracy"  value={asPct(s.accuracy)}  decimals={1} suffix="%" accent="cyan"   sub={`Round ${s.round ?? '—'}/${s.total_rounds ?? '—'}`} />
       <KpiCard label="Macro F1"  value={asPct(s.macro_f1)}  decimals={1} suffix="%" accent="purple" sub="Global model score" />
       <KpiCard label="Loss"      value={s.loss}               decimals={4}           accent="amber"  sub="Cross-entropy loss" />
-      <KpiCard label="Privacy ε" value={s.epsilon}            decimals={4}           accent="cyan"   sub={`${(((s.epsilon || 0) / 10) * 100).toFixed(1)}% of ε=10 budget`} />
+      <KpiCard label="Privacy ε" value={s.epsilon}            decimals={4}           accent="cyan"   sub={`${(((s.epsilon||0)/10)*100).toFixed(1)}% of ε=10 budget`} />
     </div>
   )
 
@@ -684,6 +704,11 @@ export default function App() {
       <PageHeader title="TEE · Trusted Execution" desc="Intel SGX enclave attestation and execution overhead benchmarks." />
       {kpiCards}
       <TeePanel teeData={teeData} attestation={attestation} live={live} />
+    </>,
+    predictions: <>
+      <PageHeader title="Predictions" desc="Upload a CSV and compare predictions from the global federated model vs individual client local models." />
+      {kpiCards}
+      <PredictionsPage />
     </>,
   }
 
