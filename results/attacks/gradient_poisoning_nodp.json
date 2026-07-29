@@ -1,0 +1,93 @@
+{
+  "attack": "gradient_poisoning",
+  "config": {
+    "fl_rounds": 5,
+    "local_epochs": 3,
+    "poisoned_client": 1,
+    "poison_target_class": 1,
+    "poison_target_name": "WALKING_UPSTAIRS"
+  },
+  "sweep": [
+    {
+      "accuracy": 0.956332,
+      "macro_f1": 0.957295,
+      "per_class_f1": {
+        "WALKING": 0.986938,
+        "WALKING_UPSTAIRS": 0.969206,
+        "WALKING_DOWNSTAIRS": 0.976991,
+        "SITTING": 0.9,
+        "STANDING": 0.911917,
+        "LAYING": 0.998716
+      },
+      "poison_rate": 0.0,
+      "n_poisoned_labels": 0
+    },
+    {
+      "accuracy": 0.957787,
+      "macro_f1": 0.958951,
+      "per_class_f1": {
+        "WALKING": 0.988406,
+        "WALKING_UPSTAIRS": 0.977049,
+        "WALKING_DOWNSTAIRS": 0.977233,
+        "SITTING": 0.901685,
+        "STANDING": 0.90933,
+        "LAYING": 1.0
+      },
+      "poison_rate": 0.1,
+      "n_poisoned_labels": 248
+    },
+    {
+      "accuracy": 0.957302,
+      "macro_f1": 0.958395,
+      "per_class_f1": {
+        "WALKING": 0.991254,
+        "WALKING_UPSTAIRS": 0.974026,
+        "WALKING_DOWNSTAIRS": 0.977153,
+        "SITTING": 0.898716,
+        "STANDING": 0.910506,
+        "LAYING": 0.998716
+      },
+      "poison_rate": 0.3,
+      "n_poisoned_labels": 745
+    },
+    {
+      "accuracy": 0.955847,
+      "macro_f1": 0.956704,
+      "per_class_f1": {
+        "WALKING": 0.986938,
+        "WALKING_UPSTAIRS": 0.969206,
+        "WALKING_DOWNSTAIRS": 0.971731,
+        "SITTING": 0.903497,
+        "STANDING": 0.908851,
+        "LAYING": 1.0
+      },
+      "poison_rate": 0.5,
+      "n_poisoned_labels": 1242
+    },
+    {
+      "accuracy": 0.91509,
+      "macro_f1": 0.914391,
+      "per_class_f1": {
+        "WALKING": 0.929012,
+        "WALKING_UPSTAIRS": 0.865248,
+        "WALKING_DOWNSTAIRS": 0.919021,
+        "SITTING": 0.886145,
+        "STANDING": 0.889495,
+        "LAYING": 0.997423
+      },
+      "poison_rate": 1.0,
+      "n_poisoned_labels": 2484
+    }
+  ],
+  "summary": {
+    "baseline_accuracy": 0.956332,
+    "baseline_macro_f1": 0.957295,
+    "full_poison_accuracy": 0.91509,
+    "full_poison_macro_f1": 0.914391,
+    "accuracy_drop": 0.041242,
+    "f1_drop": 0.042904,
+    "risk_level": "MEDIUM",
+    "verdict": "MODERATE \u2014 poisoning causes measurable but limited degradation",
+    "mitigation_note": "FedAvg is known to be vulnerable to Byzantine attacks. Mitigations include: robust aggregation (Krum, Trimmed Mean), anomaly detection on client updates, and DP-SGD which limits the influence of any single gradient."
+  }
+}

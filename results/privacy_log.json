@@ -1,0 +1,101 @@
+[
+  {
+    "timestamp": "2026-06-06T18:20:48.155228",
+    "round": 1,
+    "client_id": "1",
+    "epsilon": 4.979530450929702,
+    "delta": 0.000364963503649635,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 5.0205,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-06-06T18:20:48.155228",
+    "round": 1,
+    "client_id": "2",
+    "epsilon": 5.022656651217346,
+    "delta": 0.00033178500331785003,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 4.9773,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-06-06T18:20:48.155228",
+    "round": 1,
+    "client_id": "0",
+    "epsilon": 4.937210570250592,
+    "delta": 0.00040257648953301127,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 5.0628,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-06-06T18:20:48.155228",
+    "round": 2,
+    "client_id": "1",
+    "epsilon": 4.979530450929702,
+    "delta": 0.000364963503649635,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 5.0205,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-06-06T18:20:48.155228",
+    "round": 2,
+    "client_id": "0",
+    "epsilon": 4.937210570250592,
+    "delta": 0.00040257648953301127,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 5.0628,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-06-06T18:20:48.155228",
+    "round": 2,
+    "client_id": "2",
+    "epsilon": 5.022656651217346,
+    "delta": 0.00033178500331785003,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 4.9773,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-06-06T18:20:48.155228",
+    "round": 3,
+    "client_id": "2",
+    "epsilon": 5.022656651217346,
+    "delta": 0.00033178500331785003,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 4.9773,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-06-06T18:20:48.155228",
+    "round": 3,
+    "client_id": "0",
+    "epsilon": 4.937210570250592,
+    "delta": 0.00040257648953301127,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 5.0628,
+    "budget_exhausted": false
+  },
+  {
+    "timestamp": "2026-06-06T18:20:48.155228",
+    "round": 3,
+    "client_id": "1",
+    "epsilon": 4.979530450929702,
+    "delta": 0.000364963503649635,
+    "loss": 0.0,
+    "accuracy": null,
+    "budget_remaining": 5.0205,
+    "budget_exhausted": false
+  }
+]

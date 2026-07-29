@@ -1,0 +1,521 @@
+"""
+Flower FL client for one CSV dataset / organisation.
+
+Model Inversion Defence Changes
+--------------------------------
+- _init_model_and_data() now builds BOTH a bare base model (self.model, used
+  for training so DP-SGD / Opacus hooks work on clean logits) AND a
+  PrivacyWrapper (self._defended_model) whose base_model IS the same object
+  as self.model — so weights are always in sync with zero extra overhead.
+
+- evaluate() switches to self._defended_model.eval() so all client-side
+  evaluation goes through the defended path (gradient-blocked, noise-added,
+  temperature-scaled).
+
+- get_parameters() always extracts weights from the base model directly,
+  keeping the FL aggregation protocol unchanged (PrivacyWrapper has no extra
+  trainable parameters).
+
+- fit() still trains self.model (bare) so Opacus PrivacyEngine hooks are
+  unaffected. The PrivacyWrapper is never put in .train() mode.
+"""
+import argparse
+import json
+import os
+import sys
+from collections import OrderedDict
+from typing import Dict, List, Optional, Tuple
+
+import flwr as fl
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+_HERE = os.path.dirname(__file__)
+_ROOT = os.path.abspath(os.path.join(_HERE, ".."))
+sys.path.insert(0, _ROOT)
+sys.path.insert(0, _HERE)
+from config.constants import DEFAULT_EPSILON  # noqa: E402
+from data_utils import (  # noqa: E402
+    infer_default_num_classes,
+    global_norm_arrays_from_config,
+    load_class_weights,
+    load_csv_data,
+    load_global_normalization_file,
+)
+from model import get_model, get_defended_model  # noqa: E402
+from train_local import evaluate, train_one_epoch  # noqa: E402
+
+# ── Crypto layer import ───────────────────────────────────────────────────────
+_CRYPTO_DIR = os.path.join(os.path.dirname(__file__), "..", "crypto", "certs")
+sys.path.insert(0, os.path.abspath(_CRYPTO_DIR))
+try:
+    from crypto_context import CryptoContext  # noqa: E402
+    _CRYPTO_AVAILABLE = True
+except ImportError:
+    _CRYPTO_AVAILABLE = False
+    print("[fl_client] WARNING: crypto_context not found — running without encryption.")
+# ─────────────────────────────────────────────────────────────────────────────
+
+# delta is computed from actual train_size after data loading (1 / n_train)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class IntelliClaveClient(fl.client.NumPyClient):
+    def __init__(
+        self,
+        csv_path: str,
+        client_id: str,
+        local_epochs: int = 3,
+        learning_rate: float = 1e-3,
+        batch_size: int = 32,
+        model_type: str = "mlp",
+        # ── DP parameters — all optional, default = DP off ───────────────────
+        use_dp: bool = False,
+        target_epsilon: float = DEFAULT_EPSILON,
+        max_grad_norm: float = 0.3,
+        num_fl_rounds: int = 10,
+        # ─────────────────────────────────────────────────────────────────────
+        # ── Crypto: optional encryption of weights in transit ────────────────
+        use_crypto: bool = False,
+        server_public_key_pem: bytes = None,
+        global_mean: Optional[np.ndarray] = None,
+        global_std: Optional[np.ndarray] = None,
+        # ─────────────────────────────────────────────────────────────────────
+    ):
+        self.cid = client_id
+        self.local_epochs = local_epochs
+        self._learning_rate = learning_rate
+        self._csv_path = csv_path
+        self._batch_size = batch_size
+        self._drop_last_for_dp = use_dp
+        self._model_type = model_type
+        self._global_norm_applied = global_mean is not None and global_std is not None
+        self.device = torch.device("cpu")
+        self.num_fl_rounds = num_fl_rounds
+
+        # Set up client-side crypto context
+        self.use_crypto = use_crypto and _CRYPTO_AVAILABLE and server_public_key_pem is not None
+        self._crypto_ctx = None
+        if self.use_crypto:
+            self._crypto_ctx = CryptoContext.from_public_pem(server_public_key_pem)
+            print(f"[Client {client_id}][Crypto] Encryption enabled — weights will be "
+                  "AES-256-GCM encrypted before transmission.")
+        elif use_crypto:
+            print(f"[Client {client_id}][Crypto] WARNING: crypto requested but unavailable "
+                  "— running without encryption.")
+
+        # DP setup — attach PrivacyEngine only after final loaders are ready
+        self.use_dp = use_dp
+        self.privacy_engine = None
+        self.target_epsilon = target_epsilon
+        self.max_grad_norm = max_grad_norm
+
+        self._init_model_and_data(
+            global_mean=global_mean,
+            global_std=global_std,
+        )
+
+        print(
+            f"[Client {client_id}] ready input_dim={self.metadata.input_dim} "
+            f"classes={self.metadata.num_classes} csv={csv_path}"
+            + (" (global normalization)" if self._global_norm_applied else "")
+        )
+
+    def _init_model_and_data(
+        self,
+        global_mean: Optional[np.ndarray] = None,
+        global_std: Optional[np.ndarray] = None,
+    ) -> None:
+        """
+        Load data (with optional global scaling) and build model/optimizer.
+
+        Two model handles are created and kept in sync:
+
+          self.model            — bare base model used exclusively for training.
+                                  Opacus PrivacyEngine wraps this object directly
+                                  so DP-SGD gradient hooks work on clean logits.
+
+          self._defended_model  — PrivacyWrapper whose .base_model IS self.model
+                                  (same Python object, not a copy). Used for all
+                                  evaluation / inference so defences are active.
+                                  Never put in .train() mode.
+
+        Because both handles point to the same underlying nn.Module, calling
+        set_parameters() (which updates self.model) automatically updates
+        self._defended_model.base_model — no extra synchronisation needed.
+        """
+        self.train_loader, self.test_loader, self.metadata = load_csv_data(
+            self._csv_path,
+            batch_size=self._batch_size,
+            drop_last_for_dp=self._drop_last_for_dp,
+            global_mean=global_mean,
+            global_std=global_std,
+            num_classes=infer_default_num_classes(),
+        )
+        self.target_delta = 1.0 / self.metadata.train_size
+
+        # ── Base model — training only ────────────────────────────────────────
+        self.model = get_model(
+            self.metadata.input_dim,
+            self.metadata.num_classes,
+            model_type=self._model_type,
+        ).to(self.device)
+
+        # ── Defended wrapper — inference / evaluation only ────────────────────
+        # get_defended_model() builds a fresh base model internally; we
+        # immediately replace it with self.model so both handles share weights.
+        self._defended_model = get_defended_model(
+            self.metadata.input_dim,
+            self.metadata.num_classes,
+            model_type=self._model_type,
+        ).to(self.device)
+        # Share the exact same base model object — weight sync is automatic.
+        self._defended_model.base_model = self.model
+        print(
+            f"[Client {self.cid}][Defence] PrivacyWrapper attached "
+            f"(noise_scale={self._defended_model.noise_scale}, "
+            f"temperature={self._defended_model.temperature})"
+        )
+
+        class_weights = load_class_weights(
+            num_classes=self.metadata.num_classes, device=self.device
+        )
+        self.criterion = nn.CrossEntropyLoss(weight=class_weights)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=self._learning_rate)
+
+        if self.use_dp:
+            self._attach_privacy_engine()
+
+    def _ensure_global_normalization(self, config: Dict) -> None:
+        """Apply server-coordinated global mean/std from the FL round config."""
+        if self._global_norm_applied:
+            return
+        global_mean, global_std = global_norm_arrays_from_config(config)
+        if global_mean is None or global_std is None:
+            return
+
+        print(f"[Client {self.cid}] Applying server-coordinated global normalization")
+        self.privacy_engine = None
+        self._global_norm_applied = True
+        self._init_model_and_data(global_mean=global_mean, global_std=global_std)
+
+    def _attach_privacy_engine(self):
+        """
+        Wraps self.model, self.optimizer, and self.train_loader with Opacus.
+        Called once during __init__ when use_dp=True.
+
+        Opacus wraps self.model (the bare base model), NOT self._defended_model.
+        This is intentional: DP-SGD needs clean logits and unmodified gradient
+        hooks. The PrivacyWrapper is only active during eval() calls and never
+        intercepts the training path.
+
+        After Opacus wraps self.model, we re-point self._defended_model.base_model
+        to the newly wrapped model object so weight sharing is maintained.
+        """
+        try:
+            from opacus import PrivacyEngine
+            from opacus.validators import ModuleValidator
+
+            # Validate and auto-fix model (replaces BatchNorm with GroupNorm)
+            errors = ModuleValidator.validate(self.model, strict=False)
+            if errors:
+                print(f"[Client {self.cid}][DP] Auto-fixing model: {errors}")
+                self.model = ModuleValidator.fix(self.model)
+
+            total_epochs = self.local_epochs * self.num_fl_rounds
+
+            self.privacy_engine = PrivacyEngine()
+            self.model, self.optimizer, self.train_loader = (
+                self.privacy_engine.make_private_with_epsilon(
+                    module=self.model,
+                    optimizer=self.optimizer,
+                    data_loader=self.train_loader,
+                    epochs=total_epochs,
+                    target_epsilon=self.target_epsilon,
+                    target_delta=self.target_delta,
+                    max_grad_norm=self.max_grad_norm,
+                )
+            )
+
+            # Re-sync: Opacus may have replaced self.model with a GradSampleModule
+            # wrapper. Point the defended model to whatever object Opacus returned
+            # so the two handles still share the same underlying weights.
+            self._defended_model.base_model = self.model
+            print(
+                f"[Client {self.cid}][DP] PrivacyEngine attached: "
+                f"ε={self.target_epsilon}, δ={self.target_delta:.2e}, "
+                f"max_grad_norm={self.max_grad_norm}, "
+                f"train_size={self.metadata.train_size}, "
+                f"total_epochs={total_epochs} "
+                f"({self.local_epochs} local × {self.num_fl_rounds} rounds)"
+            )
+            print(
+                f"[Client {self.cid}][Defence] PrivacyWrapper re-synced to "
+                "Opacus-wrapped model."
+            )
+
+        except ImportError:
+            print(
+                f"[Client {self.cid}][DP] WARNING: Opacus not installed. "
+                "Running without DP."
+            )
+            self.use_dp = False
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Weight accessors
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def get_parameters(self, _config) -> List[np.ndarray]:
+        """
+        Return base model weights for FL aggregation.
+
+        Always extracts from the underlying base model, not the PrivacyWrapper,
+        because the wrapper has no extra trainable parameters. When Opacus is
+        active, self.model is a GradSampleModule — Opacus stores the original
+        parameters under ._module, which state_dict() exposes correctly.
+        """
+        # When Opacus wraps the model it stores original params under ._module.
+        # state_dict() on the GradSampleModule still returns the right keys,
+        # so this works unchanged whether DP is on or off.
+        base = self.model
+        return [value.cpu().numpy() for value in base.state_dict().values()]
+
+    def set_parameters(self, parameters: List[np.ndarray]):
+        """
+        Load aggregated global weights into the base model.
+
+        Because self._defended_model.base_model IS self.model (same object),
+        the PrivacyWrapper automatically sees the updated weights — no
+        separate sync step needed.
+        """
+        state_dict = OrderedDict(
+            (key, torch.tensor(value))
+            for key, value in zip(self.model.state_dict().keys(), parameters)
+        )
+        self.model.load_state_dict(state_dict, strict=True)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # FL hooks
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def fit(self, parameters, config) -> Tuple[List[np.ndarray], int, Dict]:
+        """
+        Local training round.
+
+        Uses self.model (bare base model) for training so that:
+          - Opacus gradient hooks fire correctly on clean logits
+          - Loss is computed against raw logits (CrossEntropyLoss expects logits)
+          - PrivacyWrapper defences do NOT interfere with the training signal
+        """
+        try:
+            self._ensure_global_normalization(config)
+            self.set_parameters(parameters)
+            epochs = int(config.get("local_epochs", self.local_epochs))
+        except Exception as exc:
+            print(f"[Client {self.cid}][ERROR] fit() setup failed: {type(exc).__name__}: {exc}")
+            raise
+
+        loss = 0.0
+        for _ in range(epochs):
+            loss = train_one_epoch(
+                self.model,          # bare base model — defences inactive during training
+                self.train_loader,
+                self.optimizer,
+                self.criterion,
+                self.device,
+            )
+
+        # Evaluation via the defended model so reported metrics reflect the
+        # inference path (with noise + temperature scaling active).
+        accuracy, macro_f1 = evaluate(self._defended_model, self.test_loader, self.device)
+
+        metrics = {
+            "loss": float(loss),
+            "accuracy": float(accuracy),
+            "macro_f1": float(macro_f1),
+        }
+
+        if self.use_dp and self.privacy_engine is not None:
+            eps = self.privacy_engine.get_epsilon(delta=self.target_delta)
+            metrics["epsilon"] = float(eps)
+            metrics["delta"] = float(self.target_delta)
+            metrics["client_id"] = self.cid
+            print(
+                f"[Client {self.cid}][DP] "
+                f"loss={loss:.4f} acc={accuracy:.4f} ε={eps:.4f}"
+            )
+
+        # Encrypt weights before sending to server if crypto is enabled.
+        # Always send base model weights (no wrapper params).
+        outgoing_weights = self.get_parameters({})
+        if self.use_crypto and self._crypto_ctx is not None:
+            payload = self._crypto_ctx.encrypt_weights(outgoing_weights)
+            payload_bytes = json.dumps(payload).encode()
+            packed = np.frombuffer(payload_bytes, dtype=np.uint8).copy()
+            print(f"[Client {self.cid}][Crypto] fit() weights encrypted "
+                  f"({len(payload_bytes):,} bytes)")
+            outgoing_weights = [packed]
+
+        return (
+            outgoing_weights,
+            len(self.train_loader.dataset),
+            metrics,
+        )
+
+    def evaluate(self, parameters, config) -> Tuple[float, int, Dict]:
+        """
+        Federated evaluation round.
+
+        CHANGED: uses self._defended_model (PrivacyWrapper) instead of the bare
+        self.model. This means:
+          - The base model runs inside torch.no_grad() (gradient blocking)
+          - Laplace noise is added to logits
+          - Temperature scaling is applied
+          - The evaluation metrics returned to the server reflect the defended
+            inference path, not the raw model
+
+        Loss is still computed from raw logits (via self.model) because
+        CrossEntropyLoss needs logits, not softmax probabilities.
+        """
+        try:
+            self._ensure_global_normalization(config)
+            self.set_parameters(parameters)
+        except Exception as exc:
+            print(f"[Client {self.cid}][ERROR] evaluate() setup failed: {type(exc).__name__}: {exc}")
+            raise
+
+        total_loss = 0.0
+        n_examples = 0
+
+        # Put defended model in eval mode — this activates all PrivacyWrapper defences.
+        self._defended_model.eval()
+
+        with torch.no_grad():
+            for X_batch, y_batch in self.test_loader:
+                X_batch = X_batch.to(self.device)
+                y_batch = y_batch.to(self.device)
+
+                # Loss: compute from raw base model logits (CE expects logits).
+                # self.model is already in eval mode (set_parameters doesn't change mode).
+                raw_logits = self.model(X_batch)
+                loss = self.criterion(raw_logits, y_batch)
+                total_loss += loss.item() * len(y_batch)
+                n_examples += len(y_batch)
+
+        # Accuracy / F1 via the defended model (probs → argmax internally).
+        accuracy, macro_f1 = evaluate(self._defended_model, self.test_loader, self.device)
+
+        return (
+            float(total_loss / n_examples),
+            n_examples,
+            {
+                "accuracy": float(accuracy),
+                "macro_f1": float(macro_f1),
+            },
+        )
+
+
+def start_client(
+    csv_path: str,
+    client_id: str,
+    server_address: str = "127.0.0.1:8080",
+    model_type: str = "mlp",
+    local_epochs: int = 3,
+    learning_rate: float = 1e-3,
+    use_dp: bool = False,
+    target_epsilon: float = DEFAULT_EPSILON,
+    max_grad_norm: float = 0.3,
+    num_fl_rounds: int = 10,
+    batch_size: int = 32,
+    use_crypto: bool = False,
+    server_public_key_pem: bytes = None,
+    global_mean: Optional[np.ndarray] = None,
+    global_std: Optional[np.ndarray] = None,
+    norm_config_path: Optional[str] = None,
+):
+    if norm_config_path and os.path.exists(norm_config_path):
+        global_mean, global_std = load_global_normalization_file(norm_config_path)
+        print(f"[Client {client_id}] Loaded global normalization from {norm_config_path}")
+
+    fl.client.start_numpy_client(
+        server_address=server_address,
+        client=IntelliClaveClient(
+            csv_path=csv_path,
+            client_id=client_id,
+            local_epochs=local_epochs,
+            learning_rate=learning_rate,
+            model_type=model_type,
+            use_dp=use_dp,
+            target_epsilon=target_epsilon,
+            max_grad_norm=max_grad_norm,
+            num_fl_rounds=num_fl_rounds,
+            batch_size=batch_size,
+            use_crypto=use_crypto,
+            server_public_key_pem=server_public_key_pem,
+            global_mean=global_mean,
+            global_std=global_std,
+        ),
+    )
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--csv", required=True)
+    parser.add_argument("--id", required=True)
+    parser.add_argument("--server", default="127.0.0.1:8080")
+    parser.add_argument("--lr", type=float, default=1e-3,
+                        help="Learning rate for local optimizer (default: 1e-3).")
+    parser.add_argument("--local-epochs", type=int, default=3,
+                        help="Local training epochs per FL round (default: 3).")
+    parser.add_argument("--batch-size", type=int, default=32,
+                        help="DataLoader batch size (default: 32).")
+    parser.add_argument("--dp", action="store_true",
+                        help="Enable Differential Privacy via Opacus.")
+    parser.add_argument("--epsilon", type=float, default=10.0,
+                        help="Target epsilon (privacy budget). Default=10.0.")
+    parser.add_argument("--max-grad-norm", type=float, default=1.0,
+                        help="Gradient clipping norm for DP-SGD. Default=1.0.")
+    parser.add_argument("--model-type", default="mlp",
+                        choices=["mlp", "resnet-tabular", "transformer-tabular"],
+                        help="Model architecture (default: mlp).")
+    parser.add_argument("--rounds", type=int, default=10,
+                        help="Total FL rounds — must match server --rounds. Default=10.")
+    parser.add_argument("--crypto", action="store_true",
+                        help="Encrypt weights in transit using AES-256-GCM + RSA.")
+    parser.add_argument("--pubkey", default=None,
+                        help="Path to server public key PEM file.")
+    args = parser.parse_args()
+
+    # Load public key if crypto enabled
+    server_public_key_pem = None
+    if args.crypto:
+        pubkey_path = args.pubkey or os.path.join(
+            os.path.dirname(__file__), "..", "crypto", "certs", "keys", "server_public.pem"
+        )
+        pubkey_path = os.path.abspath(pubkey_path)
+        if not os.path.exists(pubkey_path):
+            print(f"[Crypto] ERROR: public key not found at {pubkey_path}")
+            print("         Start the server first (it generates the keypair), "
+                  "then copy server_public.pem to clients.")
+            raise SystemExit(1)
+        with open(pubkey_path, "rb") as f:
+            server_public_key_pem = f.read()
+        print(f"[Crypto] Loaded server public key from {pubkey_path}")
+
+    start_client(
+        args.csv,
+        args.id,
+        args.server,
+        model_type=args.model_type,
+        local_epochs=args.local_epochs,
+        learning_rate=args.lr,
+        batch_size=args.batch_size,
+        use_dp=args.dp,
+        target_epsilon=args.epsilon,
+        max_grad_norm=args.max_grad_norm,
+        num_fl_rounds=args.rounds,
+        use_crypto=args.crypto,
+        server_public_key_pem=server_public_key_pem,
+    )

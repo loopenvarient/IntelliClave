@@ -1,0 +1,20 @@
+[
+  {
+    "round": 1,
+    "loss": 1.63053,
+    "accuracy": 0.49248,
+    "macro_f1": 0.40459
+  },
+  {
+    "round": 2,
+    "loss": 1.17622,
+    "accuracy": 0.7608,
+    "macro_f1": 0.73853
+  },
+  {
+    "round": 3,
+    "loss": 0.67263,
+    "accuracy": 0.8491,
+    "macro_f1": 0.8432
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "input_dim": 561,
+  "num_classes": 6,
+  "class_names": [
+    "class_0",
+    "class_1",
+    "class_2",
+    "class_3",
+    "class_4",
+    "class_5"
+  ],
+  "model_type": "mlp",
+  "mi_noise_scale": 1.0,
+  "mi_temperature": 5.0
+}

@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard-backend
+  namespace: intelliclave
+  labels:
+    app: dashboard-backend
+    role: dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard-backend
+  template:
+    metadata:
+      labels:
+        app: dashboard-backend
+        role: dashboard
+    spec:
+      containers:
+      - name: dashboard-backend
+        image: intelliclave-dashboard:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8001
+          name: http
+        env:
+        - name: RESULTS_DIR
+          value: "/app/results"
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        volumeMounts:
+        - name: server-results
+          mountPath: /app/results
+          readOnly: true
+      volumes:
+      - name: server-results
+        persistentVolumeClaim:
+          claimName: fl-server-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-service
+  namespace: intelliclave
+spec:
+  selector:
+    app: dashboard-backend
+  ports:
+    - protocol: TCP
+      port: 8001
+      targetPort: 8001
+  type: ClusterIP

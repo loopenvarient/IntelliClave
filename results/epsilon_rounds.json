@@ -1,0 +1,37 @@
+[
+  {
+    "fl_round": 1,
+    "epsilon_consumed": 5.0289,
+    "budget_remaining": 4.9711,
+    "budget_exhausted": false,
+    "test_accuracy": 0.7658
+  },
+  {
+    "fl_round": 2,
+    "epsilon_consumed": 6.5831,
+    "budget_remaining": 3.4169,
+    "budget_exhausted": false,
+    "test_accuracy": 0.8108
+  },
+  {
+    "fl_round": 3,
+    "epsilon_consumed": 7.8512,
+    "budget_remaining": 2.1488,
+    "budget_exhausted": false,
+    "test_accuracy": 0.8072
+  },
+  {
+    "fl_round": 4,
+    "epsilon_consumed": 8.9713,
+    "budget_remaining": 1.0287,
+    "budget_exhausted": false,
+    "test_accuracy": 0.8414
+  },
+  {
+    "fl_round": 5,
+    "epsilon_consumed": 9.9968,
+    "budget_remaining": 0.0032,
+    "budget_exhausted": false,
+    "test_accuracy": 0.8694
+  }
+]

@@ -1,0 +1,93 @@
+{
+  "attack": "gradient_poisoning",
+  "config": {
+    "fl_rounds": 5,
+    "local_epochs": 3,
+    "poisoned_client": 1,
+    "poison_target_class": 1,
+    "poison_target_name": "class_2"
+  },
+  "sweep": [
+    {
+      "accuracy": 0.918486,
+      "macro_f1": 0.918929,
+      "per_class_f1": {
+        "class_1": 0.954674,
+        "class_2": 0.955556,
+        "class_3": 0.906367,
+        "class_4": 0.85989,
+        "class_5": 0.909814,
+        "class_6": 0.927273
+      },
+      "poison_rate": 0.0,
+      "n_poisoned_labels": 0
+    },
+    {
+      "accuracy": 0.910723,
+      "macro_f1": 0.912324,
+      "per_class_f1": {
+        "class_1": 0.958032,
+        "class_2": 0.941764,
+        "class_3": 0.915078,
+        "class_4": 0.837398,
+        "class_5": 0.899204,
+        "class_6": 0.92247
+      },
+      "poison_rate": 0.1,
+      "n_poisoned_labels": 442
+    },
+    {
+      "accuracy": 0.901019,
+      "macro_f1": 0.902083,
+      "per_class_f1": {
+        "class_1": 0.952924,
+        "class_2": 0.927066,
+        "class_3": 0.894928,
+        "class_4": 0.830287,
+        "class_5": 0.878999,
+        "class_6": 0.928292
+      },
+      "poison_rate": 0.3,
+      "n_poisoned_labels": 1326
+    },
+    {
+      "accuracy": 0.899078,
+      "macro_f1": 0.895881,
+      "per_class_f1": {
+        "class_1": 0.952924,
+        "class_2": 0.877976,
+        "class_3": 0.853229,
+        "class_4": 0.851182,
+        "class_5": 0.885201,
+        "class_6": 0.954774
+      },
+      "poison_rate": 0.5,
+      "n_poisoned_labels": 2211
+    },
+    {
+      "accuracy": 0.150412,
+      "macro_f1": 0.044331,
+      "per_class_f1": {
+        "class_1": 0.0,
+        "class_2": 0.26087,
+        "class_3": 0.0,
+        "class_4": 0.0,
+        "class_5": 0.0,
+        "class_6": 0.005115
+      },
+      "poison_rate": 1.0,
+      "n_poisoned_labels": 4423
+    }
+  ],
+  "summary": {
+    "baseline_accuracy": 0.918486,
+    "baseline_macro_f1": 0.918929,
+    "full_poison_accuracy": 0.150412,
+    "full_poison_macro_f1": 0.044331,
+    "accuracy_drop": 0.768074,
+    "f1_drop": 0.874598,
+    "risk_level": "HIGH",
+    "verdict": "VULNERABLE \u2014 a single poisoned client significantly degrades the global model",
+    "mitigation_note": "FedAvg is known to be vulnerable to Byzantine attacks. Mitigations include: robust aggregation (Krum, Trimmed Mean), anomaly detection on client updates, and DP-SGD which limits the influence of any single gradient."
+  }
+}

@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fl-server
+  namespace: intelliclave
+  labels:
+    app: fl-server
+    role: fl-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fl-server
+  template:
+    metadata:
+      labels:
+        app: fl-server
+        role: fl-server
+    spec:
+      containers:
+      - name: fl-server
+        image: fl-server-image:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: grpc
+        env:
+        - name: ROUNDS
+          value: "20"
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "2"
+            memory: "2Gi"
+        volumeMounts:
+        - name: server-storage
+          mountPath: /app/results
+        - name: crypto-keys
+          mountPath: /app/crypto/certs/keys
+          readOnly: true
+        # All client CSVs — global normalization + distribution report (see Bug #6)
+        - name: processed-data
+          mountPath: /app/data/processed
+          readOnly: true
+      volumes:
+      - name: server-storage
+        persistentVolumeClaim:
+          claimName: fl-server-pvc
+      - name: crypto-keys
+        secret:
+          secretName: fl-crypto-keys
+      - name: processed-data
+        persistentVolumeClaim:
+          claimName: fl-shared-storage

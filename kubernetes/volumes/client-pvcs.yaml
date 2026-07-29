@@ -1,0 +1,38 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: client-1-pvc
+  namespace: intelliclave
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: client-2-pvc
+  namespace: intelliclave
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 100Mi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: client-3-pvc
+  namespace: intelliclave
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 100Mi

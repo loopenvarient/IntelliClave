@@ -1,0 +1,62 @@
+﻿[
+    {
+        "name":  "Data/schema check",
+        "status":  "passed",
+        "exit_code":  0,
+        "started_at":  "2026-06-06T15:18:47.8676098+05:00",
+        "finished_at":  "2026-06-06T15:19:05.8869432+05:00",
+        "duration_seconds":  18.02,
+        "log":  "results\\pipeline_tests\\latest_fast\\data_schema_check.log",
+        "command":  "conda run -n IntelliClave python data/datascripts/check_data.py"
+    },
+    {
+        "name":  "Crypto tests",
+        "status":  "passed",
+        "exit_code":  0,
+        "started_at":  "2026-06-06T15:19:06.1787519+05:00",
+        "finished_at":  "2026-06-06T15:19:13.5143848+05:00",
+        "duration_seconds":  7.34,
+        "log":  "results\\pipeline_tests\\latest_fast\\crypto_tests.log",
+        "command":  "conda run -n IntelliClave python crypto/certs/test_crypto.py"
+    },
+    {
+        "name":  "Attestation integration",
+        "status":  "passed",
+        "exit_code":  0,
+        "started_at":  "2026-06-06T15:19:13.5267458+05:00",
+        "finished_at":  "2026-06-06T15:19:21.7479061+05:00",
+        "duration_seconds":  8.22,
+        "log":  "results\\pipeline_tests\\latest_fast\\attestation_integration.log",
+        "command":  "conda run -n IntelliClave python tee/attestation/attestation_integration.py"
+    },
+    {
+        "name":  "Sealed storage",
+        "status":  "passed",
+        "exit_code":  0,
+        "started_at":  "2026-06-06T15:19:21.7536110+05:00",
+        "finished_at":  "2026-06-06T15:19:27.6122162+05:00",
+        "duration_seconds":  5.86,
+        "log":  "results\\pipeline_tests\\latest_fast\\sealed_storage.log",
+        "command":  "conda run -n IntelliClave python tee/sealed_storage/sealed_storage.py"
+    },
+    {
+        "name":  "Dashboard backend E2E",
+        "status":  "failed",
+        "exit_code":  -1,
+        "started_at":  "2026-06-06T15:19:27.6192481+05:00",
+        "finished_at":  "2026-06-06T15:19:46.2626400+05:00",
+        "duration_seconds":  18.64,
+        "log":  "results\\pipeline_tests\\latest_fast\\dashboard_backend_e2e.log",
+        "command":  "conda run -n IntelliClave python dashboard/backend/test_e2e.py"
+    },
+    {
+        "name":  "Client import smoke test",
+        "status":  "passed",
+        "exit_code":  0,
+        "started_at":  "2026-06-06T15:19:46.2731717+05:00",
+        "finished_at":  "2026-06-06T15:19:59.5568542+05:00",
+        "duration_seconds":  13.28,
+        "log":  "results\\pipeline_tests\\latest_fast\\client_import_smoke_test.log",
+        "command":  "conda run -n IntelliClave python -c import sys; sys.path.insert(0, \u0027fl\u0027); import data_utils, fl_client; print(\u0027classes=\u0027, data_utils.infer_default_num_classes()); print(\u0027fl_client import ok\u0027)"
+    }
+]

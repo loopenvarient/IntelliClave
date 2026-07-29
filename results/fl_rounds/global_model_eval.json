@@ -1,0 +1,31 @@
+{
+  "checkpoint": "results/fl_rounds/global_model_latest.pth",
+  "per_client": [
+    {
+      "client_csv": "C:\\Users\\DELL\\OneDrive\\Documents\\IntelliClave\\IntelliClave\\data\\processed\\client1.csv",
+      "test_size": 1106,
+      "loss": 0.69311,
+      "accuracy": 0.86709,
+      "macro_f1": 0.84692
+    },
+    {
+      "client_csv": "C:\\Users\\DELL\\OneDrive\\Documents\\IntelliClave\\IntelliClave\\data\\processed\\client2.csv",
+      "test_size": 458,
+      "loss": 0.95587,
+      "accuracy": 0.72489,
+      "macro_f1": 0.5192
+    },
+    {
+      "client_csv": "C:\\Users\\DELL\\OneDrive\\Documents\\IntelliClave\\IntelliClave\\data\\processed\\client3.csv",
+      "test_size": 497,
+      "loss": 0.97127,
+      "accuracy": 0.70221,
+      "macro_f1": 0.55139
+    }
+  ],
+  "overall_weighted": {
+    "loss": 0.81858,
+    "accuracy": 0.79573,
+    "macro_f1": 0.70283
+  }
+}

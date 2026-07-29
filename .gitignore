@@ -1,20 +1,14 @@
 ```gitignore
 # ── Data & Datasets ──────────────────────────────────────────
-*.csv
-data/raw/
-data/processed/
 *.pcap
 *.pcapng
 
 # ── ML Models & Checkpoints ──────────────────────────────────
-*.pt
-*.pth
-*.pkl
+
 *.h5
 *.onnx
 *.model
-checkpoints/
-sealed_storage/
+
 
 # ── Python ───────────────────────────────────────────────────
 __pycache__/
@@ -41,14 +35,7 @@ package-lock.json
 logs/
 *.out
 
-# ── Generated Results ────────────────────────────────────────
-status.json
-attestation.json
-results.json
-results/benchmarks_enclave.json
-results/overhead_ratios.json
-benchmarks_enclave.json
-overhead_ratios.json
+
 
 # ── OS & Editor ──────────────────────────────────────────────
 .DS_Store
@@ -76,7 +63,3 @@ gramine_tmp/
 !crypto/certs/ca.crt
 !crypto/certs/server.crt
 
-# ── Jupyter ──────────────────────────────────────────────────
-.ipynb_checkpoints/
-*.ipynb
-```

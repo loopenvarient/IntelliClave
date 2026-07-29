@@ -1,0 +1,142 @@
+# ── Gramine manifest — IntelliClave FL Server (full enclave workload) ─────────
+# IntelliClave TEE | Gramine 1.9 | gramine-direct (WSL2) / gramine-sgx (prod)
+#
+# Runs fl/fl_server.py (FedAvg aggregation + crypto decryption) inside the enclave.
+# The server is the most security-critical component — it holds the RSA private key
+# and performs FedAvg aggregation. Running it inside the enclave means:
+#   - Private key is sealed to the enclave (never visible to host OS)
+#   - Aggregation logic is attested (MRENCLAVE binds code to output)
+#   - Weight decryption happens inside the hardware trust boundary
+#
+# Build:
+#   cd tee/fl_enclave
+#   gramine-manifest fl_server_enclave.manifest.template fl_server_enclave.manifest
+#
+# Run (gramine-direct — WSL2 prototype):
+#   gramine-direct python3 ../../fl/run_server.py \
+#     --rounds 5 --min-clients 3 --address 0.0.0.0:8080 --crypto
+#
+# Run (gramine-sgx — production):
+#   gramine-sgx python3 ../../fl/run_server.py \
+#     --rounds 5 --min-clients 3 --address 0.0.0.0:8080 --crypto
+
+[loader]
+entrypoint = "file:{{ gramine.libos }}"
+log_level  = "error"
+argv       = ["python3"]
+insecure__use_host_env = false
+
+[loader.env]
+LD_LIBRARY_PATH = "/lib:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/usr/local/lib"
+PATH            = "/usr/bin:/bin"
+HOME            = "/tmp"
+OMP_NUM_THREADS = "1"
+
+# ── Gramine runtime ───────────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/lib"
+uri  = "file:{{ gramine.runtimedir() }}"
+
+# ── System libraries ──────────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/lib/x86_64-linux-gnu"
+uri  = "file:/lib/x86_64-linux-gnu"
+
+[[fs.mounts]]
+path = "/usr/lib/x86_64-linux-gnu"
+uri  = "file:/usr/lib/x86_64-linux-gnu"
+
+# ── Python interpreter ────────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/usr/bin/python3.12"
+uri  = "file:/usr/bin/python3.12"
+
+[[fs.mounts]]
+path = "/usr/lib/python3.12"
+uri  = "file:/usr/lib/python3.12"
+
+[[fs.mounts]]
+path = "/usr/lib/python3"
+uri  = "file:/usr/lib/python3"
+
+[[fs.mounts]]
+path = "/usr/local/lib/python3.12"
+uri  = "file:/usr/local/lib/python3.12"
+
+# ── pip packages: torch, flwr, cryptography, sklearn ─────────────────────────
+[[fs.mounts]]
+path = "/usr/local/lib"
+uri  = "file:/usr/local/lib"
+
+# ── Project source ────────────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/fl"
+uri  = "file:../../fl"
+
+[[fs.mounts]]
+path = "/crypto"
+uri  = "file:../../crypto"
+
+[[fs.mounts]]
+path = "/data/class_weights.json"
+uri  = "file:../../data/class_weights.json"
+
+[[fs.mounts]]
+path = "/data/processed"
+uri  = "file:../../data/processed"
+
+# ── Crypto keys — SEALED inside enclave ──────────────────────────────────────
+# In gramine-sgx: these files are encrypted with the enclave's sealing key.
+# The host OS cannot read server_private.pem even with root access.
+# In gramine-direct: files are readable by host (prototype limitation).
+[[fs.mounts]]
+path = "/crypto/certs/keys"
+uri  = "file:../../crypto/certs/keys"
+
+# ── Results — writable (model checkpoints, privacy log) ──────────────────────
+[[fs.mounts]]
+path = "/results"
+uri  = "file:../../results"
+
+# ── TEE attestation module ────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/tee"
+uri  = "file:../../tee"
+
+# ── System files ──────────────────────────────────────────────────────────────
+[[fs.mounts]]
+path = "/etc/ssl"
+uri  = "file:/etc/ssl"
+
+[[fs.mounts]]
+path = "/etc/resolv.conf"
+uri  = "file:/etc/resolv.conf"
+
+[[fs.mounts]]
+path = "/etc/hosts"
+uri  = "file:/etc/hosts"
+
+# ── Temp + proc ───────────────────────────────────────────────────────────────
+[[fs.mounts]]
+type = "tmpfs"
+path = "/tmp"
+
+[[fs.mounts]]
+type = "proc"
+path = "/proc"
+
+[sys]
+enable_sigterm_injection = true
+
+[loader.insecure__use_cmdline_argv]
+enabled = true
+
+# ── SGX settings ──────────────────────────────────────────────────────────────
+[sgx]
+debug        = false
+edmm_enable  = false
+# Server needs more memory: torch model + FedAvg buffers for 3 clients
+enclave_size = "4G"
+max_threads  = 32
+# Sealed storage: private key is bound to this enclave's MRENCLAVE
+# remote_attestation = "dcap"   # uncomment for production Intel DCAP

@@ -1,0 +1,75 @@
+# Gramine manifest — Enclave Benchmark
+# IntelliClave TEE | Gramine 1.9 | gramine-direct (WSL2)
+# Measures TEE overhead for 5 operations vs baseline
+
+[loader]
+entrypoint = "file:{{ gramine.libos }}"
+log_level = "error"
+argv = ["python3", "run_enclave_benchmarks.py", "--tee"]
+insecure__use_host_env = false
+
+[loader.env]
+LD_LIBRARY_PATH = "/lib:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/usr/local/lib"
+PATH = "/usr/bin:/bin"
+HOME = "/tmp"
+OMP_NUM_THREADS = "1"
+
+[[fs.mounts]]
+path = "/lib"
+uri = "file:{{ gramine.runtimedir() }}"
+
+[[fs.mounts]]
+path = "/lib/x86_64-linux-gnu"
+uri = "file:/lib/x86_64-linux-gnu"
+
+[[fs.mounts]]
+path = "/usr/lib/x86_64-linux-gnu"
+uri = "file:/usr/lib/x86_64-linux-gnu"
+
+[[fs.mounts]]
+path = "/usr/bin/python3.12"
+uri = "file:/usr/bin/python3.12"
+
+[[fs.mounts]]
+path = "/usr/lib/python3.12"
+uri = "file:/usr/lib/python3.12"
+
+[[fs.mounts]]
+path = "/usr/lib/python3"
+uri = "file:/usr/lib/python3"
+
+[[fs.mounts]]
+path = "/usr/local/lib/python3.12"
+uri = "file:/usr/local/lib/python3.12"
+
+[[fs.mounts]]
+path = "/usr/local/lib"
+uri = "file:/usr/local/lib"
+
+[[fs.mounts]]
+path = "/run_enclave_benchmarks.py"
+uri = "file:run_enclave_benchmarks.py"
+
+[[fs.mounts]]
+path = "/crypto"
+uri = "file:../../crypto"
+
+[[fs.mounts]]
+path = "/results"
+uri = "file:../../results"
+
+[[fs.mounts]]
+type = "tmpfs"
+path = "/tmp"
+
+[[fs.mounts]]
+type = "proc"
+path = "/proc"
+
+[sys]
+enable_sigterm_injection = true
+
+[sgx]
+debug = true
+edmm_enable = false
+enclave_size = "1G"
